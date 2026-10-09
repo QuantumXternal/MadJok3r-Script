@@ -6407,6 +6407,8 @@ local nigga = (function()
                             
                             if game.PlaceId ~= 9825515356 then
                                 do
+                                    getgenv().mj_buybotGen = (getgenv().mj_buybotGen or 0) + 1
+                                    local buybotGen = getgenv().mj_buybotGen
                                     local auto_lettuce = { enabled = false, token = 0, lastTP = 0 }
 
                                     local auto_buy = {
@@ -6429,11 +6431,72 @@ local nigga = (function()
                                         return c:FindFirstChild("HumanoidRootPart")
                                     end
 
-                                    function auto_buy:has_armor()
-                                        local c = LocalPlayer.Character
-                                        local be = c and c:FindFirstChild("BodyEffects")
-                                        local ar = be and be:FindFirstChild("Armor")
-                                        return ar ~= nil and ar.Value > 0
+                                    local buybot_WarnAt = {}
+                                    local function buybot_Warn(key, msg)
+                                        local now = os.clock()
+                                        if (buybot_WarnAt[key] or 0) + 10 > now then return end
+                                        buybot_WarnAt[key] = now
+                                        warn("[Buybot] " .. msg)
+                                    end
+
+                                    local function teleport_and_settle(target_cframe, timeout, stopFn)
+                                        local char = LocalPlayer.Character
+                                        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                                        if not hrp then return false end
+                                        local t0 = os.clock()
+                                        timeout = timeout or 1.0
+                                        repeat
+                                            if stopFn and stopFn() then return false end
+                                            char = LocalPlayer.Character
+                                            hrp = char and char:FindFirstChild("HumanoidRootPart")
+                                            if not hrp then return false end
+                                            hrp.CFrame = target_cframe
+                                            task.wait(0.05)
+                                            char = LocalPlayer.Character
+                                            hrp = char and char:FindFirstChild("HumanoidRootPart")
+                                            if not hrp then return false end
+                                            if (hrp.Position - target_cframe.Position).Magnitude < 3 then
+                                                task.wait(0.15)
+                                                return true
+                                            end
+                                        until os.clock() - t0 > timeout
+                                        return false
+                                    end
+
+                                    local ammoKeys = {
+                                        "[Double-Barrel SG Ammo]", "[Revolver Ammo]", "[Rifle Ammo]",
+                                        "[Shotgun Ammo]", "[TacticalShotgun Ammo]", "[Silencer Ammo]",
+                                        "[SilencerAR Ammo]", "[LMG Ammo]", "[Glock Ammo]", "[SMG Ammo]",
+                                        "[AK47 Ammo]", "[AR Ammo]", "[AUG Ammo]", "[DrumGun Ammo]", "[P90 Ammo]",
+                                    }
+
+                                    local function buybot_GoBuy(head, cd, clicks, pace, stopFn, stay)
+                                        local hrp = buybot_AliveHRP()
+                                        if not hrp then return false end
+                                        if (hrp.Position - head.Position).Magnitude >= 9 then
+                                            local home = hrp.CFrame
+                                            if not teleport_and_settle(head.CFrame + Vector3New(0, 5, 0), 1.0, stopFn) then
+                                                buybot_Warn("settle", "Teleport did not stick (server correction?). Skipping purchase.")
+                                                return false
+                                            end
+                                            for i = 1, clicks do
+                                                if stopFn and stopFn() then break end
+                                                pcall(fireclickdetector, cd)
+                                                task.wait(pace or 0.12)
+                                            end
+                                            if stopFn and stopFn() then return false end
+                                            if not stay then
+                                                local hrpBack = buybot_AliveHRP()
+                                                if hrpBack then pcall(function() hrpBack.CFrame = home end) end
+                                            end
+                                        else
+                                            for i = 1, clicks do
+                                                if stopFn and stopFn() then break end
+                                                pcall(fireclickdetector, cd)
+                                                task.wait(pace or 0.12)
+                                            end
+                                        end
+                                        return true
                                     end
 
                                     function auto_buy:start()
@@ -6447,7 +6510,7 @@ local nigga = (function()
                                         pcall(function()
                                             local shopsNow = workspace:FindFirstChild("Ignored")
                                             shopsNow = shopsNow and shopsNow:FindFirstChild("Shop")
-                                            if not shopsNow then return end
+                                            if not shopsNow then buybot_Warn("noshop", "Shop folder not found.") return end
                                             local home = hrp.CFrame
                                             for _, v in ipairs(shopsNow:GetChildren()) do
                                                 if not auto_buy.enabled then break end
@@ -6459,36 +6522,15 @@ local nigga = (function()
                                                     for _, g in ipairs(auto_buy.objects.guns) do
                                                         if v.Name:find(g, 1, true) then fires = fires + 1 end
                                                     end
-                                                    if not auto_buy:has_armor() then
-                                                        for _, e in ipairs(auto_buy.objects.equipment) do
-                                                            local pat = e:gsub("[%[%]]", "")
-                                                            if pat ~= "" and v.Name:find(pat, 1, true) then fires = fires + 1 end
-                                                        end
-                                                    end
                                                     for _, f in ipairs(auto_buy.objects.food) do
                                                         if not (auto_lettuce.enabled and f:find("Lettuce", 1, true)) then
                                                             if v.Name:find(f, 1, true) then fires = fires + 1 end
                                                         end
                                                     end
                                                     if fires > 0 then
-                                                        local hrpNow = buybot_AliveHRP()
-                                                        if not hrpNow then break end
-                                                        local teleported = false
-                                                        if (hrpNow.Position - head.Position).Magnitude >= 9 then
-                                                            hrpNow.CFrame = head.CFrame + Vector3New(0, 5, 0)
-                                                            teleported = true
-                                                            task.wait(0.15)
+                                                        if buybot_GoBuy(head, cd, fires, 0.12, function() return not auto_buy.enabled end) then
+                                                            task.wait(0.5)
                                                         end
-                                                        for i = 1, fires do
-                                                            if not auto_buy.enabled then break end
-                                                            pcall(fireclickdetector, cd)
-                                                            task.wait(0.12)
-                                                        end
-                                                        if teleported then
-                                                            local hrpBack = buybot_AliveHRP()
-                                                            if hrpBack then pcall(function() hrpBack.CFrame = home end) end
-                                                        end
-                                                        task.wait(0.5)
                                                     end
                                                 end
                                             end
@@ -6496,37 +6538,24 @@ local nigga = (function()
 
                                         auto_buy.state = false
                                     end
-                                
-                                    local run_auto_buy = false
-                                
-                                    local auto_buy_func = function()
-                                        while run_auto_buy do
-                                            task.wait(0.1)
-                                
-                                            auto_buy:start()
-                                        end
-                                    end
-                                
+
                                     local gun_list = { "[Double-Barrel SG]", "[Revolver]", "[Rifle]", "[TacticalShotgun]", "[Shotgun]",
                                         "[Silencer]", "[SilencerAR]", "[LMG]", "[Glock]", "[SMG]", "[AK47]", "[AR]", "[AUG]", "[DrumGun]", "[P90]" }
-                                
-                                    local equipment_list = { "[Armor]" }
-                                
+
                                     local food_list = { "[Chicken]", "[Pizza]", "[Cranberry]" }
-                                
+
                                     local buy_bot = miscTab:Section("buybot", "left")
-                                
+
                                     buy_bot:Toggle({
                                         title = "enabled",
                                         default = false,
                                         callback = function(bool)
                                             auto_buy.enabled = bool
-                                
+
                                             if bool then
-                                                run_auto_buy = true
-                                                coroutine.wrap(auto_buy_func)()
-                                            else
-                                                run_auto_buy = false
+                                                task.spawn(function()
+                                                    auto_buy:start()
+                                                end)
                                             end
                                         end
                                     })
@@ -6542,16 +6571,6 @@ local nigga = (function()
                                     })
                                 
                                     buy_bot:Dropdown({
-                                        title = "equipment",
-                                        values = equipment_list,
-                                        default = "[Armor]",
-                                        multi = true,
-                                        callback = function(value)
-                                            auto_buy.objects.equipment = value
-                                        end
-                                    })
-                                
-                                    buy_bot:Dropdown({
                                         title = "food",
                                         values = food_list,
                                         default = "[Chicken]",
@@ -6560,6 +6579,115 @@ local nigga = (function()
                                             auto_buy.objects.food = value
                                         end
                                     })
+
+                                    buy_bot:Label("Auto Buy Ammo")
+
+                                    local autoAmmo = { enabled = false, token = 0, key = "[Revolver Ammo]" }
+                                    buy_bot:Dropdown({
+                                        title = "Ammo Type",
+                                        values = ammoKeys,
+                                        default = "[Revolver Ammo]",
+                                        multi = false,
+                                        callback = function(value)
+                                            autoAmmo.key = value
+                                        end
+                                    })
+
+                                    local autoAmmoT = nil
+                                    local autoAmmoStatus = buy_bot:Label("AutoAmmo: OFF")
+                                    autoAmmoT = buy_bot:Toggle({
+                                        title = "Auto Buy Ammo",
+                                        default = false,
+                                        callback = function(bool)
+                                            autoAmmo.enabled = bool
+                                            if not bool then
+                                                autoAmmo.token = autoAmmo.token + 1
+                                                autoAmmoStatus:ChangeText("AutoAmmo: OFF")
+                                                return
+                                            end
+                                            autoAmmo.token = autoAmmo.token + 1
+                                            local my = autoAmmo.token
+                                            local homeAtStart = nil
+                                            local hrp0 = buybot_AliveHRP()
+                                            if hrp0 then homeAtStart = hrp0.CFrame end
+                                            task.spawn(function()
+                                                while autoAmmo.enabled and my == autoAmmo.token and buybotGen == getgenv().mj_buybotGen do
+                                                    local key = autoAmmo.key
+                                                    local function autoAmmoStopped()
+                                                        return not autoAmmo.enabled or my ~= autoAmmo.token
+                                                    end
+                                                    autoAmmoStatus:ChangeText("AutoAmmo: scanning…")
+                                                    local shopsNow = workspace:FindFirstChild("Ignored")
+                                                    shopsNow = shopsNow and shopsNow:FindFirstChild("Shop")
+                                                    if not shopsNow then
+                                                        buybot_Warn("noshop", "Shop folder not found.")
+                                                        autoAmmoStatus:ChangeText("AutoAmmo: no shop folder")
+                                                    else
+                                                        local target, targetHead, targetCd = nil, nil, nil
+                                                        for _, v in ipairs(shopsNow:GetChildren()) do
+                                                            if autoAmmoStopped() then break end
+                                                            if v.Name:find(key, 1, true) then
+                                                                local head = v:FindFirstChild("Head")
+                                                                local cd = v:FindFirstChild("ClickDetector")
+                                                                if not cd and head then cd = head:FindFirstChildOfClass("ClickDetector") end
+                                                                if head and cd then
+                                                                    target, targetHead, targetCd = v, head, cd
+                                                                    break
+                                                                else
+                                                                    buybot_Warn("nohead", "Ammo shop missing Head/ClickDetector: " .. tostring(v.Name))
+                                                                end
+                                                            end
+                                                        end
+                                                        if target == nil then
+                                                            if not autoAmmoStopped() then
+                                                                autoAmmoStatus:ChangeText("AutoAmmo: no match: " .. tostring(key))
+                                                                buybot_Warn("nomatch", "No shop matches ammo: " .. tostring(key))
+                                                            end
+                                                        else
+                                                            autoAmmoStatus:ChangeText("AutoAmmo: moving to " .. tostring(target.Name))
+                                                            local ok = buybot_GoBuy(targetHead, targetCd, 1, 0.1, autoAmmoStopped, true)
+                                                            if autoAmmoStopped() then break end
+                                                            if ok then
+                                                                autoAmmoStatus:ChangeText("AutoAmmo: buying " .. tostring(key))
+                                                            else
+                                                                autoAmmoStatus:ChangeText("AutoAmmo: settle failed, retrying")
+                                                            end
+                                                        end
+                                                    end
+                                                    task.wait(0.5)
+                                                end
+                                                if not autoAmmo.enabled then
+                                                    local hrpBack = buybot_AliveHRP()
+                                                    if hrpBack and homeAtStart then pcall(function() hrpBack.CFrame = homeAtStart end) end
+                                                    autoAmmoStatus:ChangeText("AutoAmmo: OFF")
+                                                else
+                                                    autoAmmoStatus:ChangeText("AutoAmmo: OFF (superseded)")
+                                                end
+                                            end)
+                                        end
+                                    })
+
+                                    buy_bot:Button({ title = "Buy Armor", callback = function()
+                                        task.spawn(function()
+                                            local shopsNow = workspace:FindFirstChild("Ignored")
+                                            shopsNow = shopsNow and shopsNow:FindFirstChild("Shop")
+                                            if not shopsNow then warn("[Buybot] Shop not found.") return end
+                                            for _, v in ipairs(shopsNow:GetChildren()) do
+                                                if v.Name:find("High-Medium Armor", 1, true) and v.Name:find("$3377", 1, true) then
+                                                    local head = v:FindFirstChild("Head")
+                                                    local cd = v:FindFirstChild("ClickDetector")
+                                                    if not cd and head then cd = head:FindFirstChildOfClass("ClickDetector") end
+                                                    if head and cd then
+                                                        buybot_GoBuy(head, cd, 1, 0.07)
+                                                    else
+                                                        warn("[Buybot] Armor shop missing Head/ClickDetector.")
+                                                    end
+                                                    return
+                                                end
+                                            end
+                                            warn("[Buybot] $3377 High-Medium Armor shop not found.")
+                                        end)
+                                    end })
 
                                     auto_lettuce.token = 0
 
@@ -6641,7 +6769,7 @@ local nigga = (function()
                                         auto_lettuce.token = auto_lettuce.token + 1
                                         local my = auto_lettuce.token
                                         task.spawn(function()
-                                            while auto_lettuce.enabled and my == auto_lettuce.token do
+                                            while auto_lettuce.enabled and my == auto_lettuce.token and buybotGen == getgenv().mj_buybotGen do
                                                 auto_lettuce_Cycle(my)
                                                 task.wait(1)
                                             end
@@ -7227,6 +7355,7 @@ local nigga = (function()
                             end })
 
                             profiles:Button({ title = "unload", callback = function ()
+                                pcall(function() getgenv().mj_buybotGen = (getgenv().mj_buybotGen or 0) + 1 end)
                                 pcall(function() if getgenv().mj_movement_Cleanup then getgenv().mj_movement_Cleanup() end end)
                                 pcall(function()
                                     for _, conns in pairs({Loops.Heartbeat, Loops.RenderStepped}) do
