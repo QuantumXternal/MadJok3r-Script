@@ -6645,7 +6645,7 @@ local nigga = (function()
                                                             end
                                                         else
                                                             autoAmmoStatus:ChangeText("AutoAmmo: moving to " .. tostring(target.Name))
-                                                            local ok = buybot_GoBuy(targetHead, targetCd, 1, 0.1, autoAmmoStopped, true)
+                                                            local ok = buybot_GoBuy(targetHead, targetCd, 1, 0.05, autoAmmoStopped, true)
                                                             if autoAmmoStopped() then break end
                                                             if ok then
                                                                 autoAmmoStatus:ChangeText("AutoAmmo: buying " .. tostring(key))
@@ -6678,7 +6678,7 @@ local nigga = (function()
                                                     local cd = v:FindFirstChild("ClickDetector")
                                                     if not cd and head then cd = head:FindFirstChildOfClass("ClickDetector") end
                                                     if head and cd then
-                                                        buybot_GoBuy(head, cd, 1, 0.07)
+                                                        buybot_GoBuy(head, cd, 1, 0.05)
                                                     else
                                                         warn("[Buybot] Armor shop missing Head/ClickDetector.")
                                                     end
