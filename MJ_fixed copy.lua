@@ -8,7 +8,7 @@
     @OWNER
         khian-draft-cubero-john
 
-    @MJscription
+    @MJ Description
         Beware of joker.
 ]]
 
