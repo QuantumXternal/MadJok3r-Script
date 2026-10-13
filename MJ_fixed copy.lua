@@ -87,6 +87,10 @@ do
     do
         function SYC.Modules.Connect(onething, secondthing)
             local connection = onething:Connect(secondthing)
+            local ok, rt = pcall(function() return getgenv().mj_runtime end)
+            if ok and type(rt) == "table" and type(rt.conns) == "table" and connection ~= nil then
+                table.insert(rt.conns, connection)
+            end
             return connection
         end
     end
@@ -106,6 +110,10 @@ do
                 end
         
                 table.insert(self.Objects, newObject)
+                local ok, rt = pcall(function() return getgenv().mj_runtime end)
+                if ok and type(rt) == "table" and type(rt.drawings) == "table" then
+                    table.insert(rt.drawings, newObject)
+                end
                 return newObject
             end
         end
@@ -124,6 +132,10 @@ do
         function Loops:AddToHeartbeat(Name, Function)
             if Loops["Heartbeat"][Name] == nil then
                 Loops["Heartbeat"][Name] = rsService.Heartbeat:Connect(Function)
+                local ok, rt = pcall(function() return getgenv().mj_runtime end)
+                if ok and type(rt) == "table" and type(rt.conns) == "table" then
+                    table.insert(rt.conns, Loops["Heartbeat"][Name])
+                end
             end
         end
         function Loops:RemoveFromHeartbeat(Name)
@@ -135,6 +147,10 @@ do
         function Loops:AddToRenderStepped(Name, Function)
             if Loops["RenderStepped"][Name] == nil then
                 Loops["RenderStepped"][Name] = rsService.RenderStepped:Connect(Function)
+                local ok, rt = pcall(function() return getgenv().mj_runtime end)
+                if ok and type(rt) == "table" and type(rt.conns) == "table" then
+                    table.insert(rt.conns, Loops["RenderStepped"][Name])
+                end
             end
         end
         function Loops:RemoveFromRenderStepped(Name)
@@ -170,6 +186,68 @@ do
             return Bounds.X, Bounds.Y
         end
     end
+end
+
+local function mj_trackConn(c)
+    local ok, rt = pcall(function() return getgenv().mj_runtime end)
+    if ok and type(rt) == "table" and type(rt.conns) == "table" and c ~= nil then
+        table.insert(rt.conns, c)
+    end
+    return c
+end
+
+local function mj_trackGui(g)
+    local ok, rt = pcall(function() return getgenv().mj_runtime end)
+    if ok and type(rt) == "table" and type(rt.guis) == "table" and g ~= nil then
+        table.insert(rt.guis, g)
+    end
+    return g
+end
+
+do -- P0: cross-execution lifecycle. Tears down the previous MJ execution's
+    -- persistent resources before this one creates any, then tracks this
+    -- run's resources for the next teardown. Runs once at load. Only touches
+    -- resources this script registered itself; never anything else's.
+    local prev = nil
+    pcall(function() prev = getgenv().mj_runtime end)
+    if type(prev) == "table" then
+        if type(prev.conns) == "table" then
+            for _, conn in ipairs(prev.conns) do
+                pcall(function() conn:Disconnect() end)
+            end
+        end
+        if type(prev.drawings) == "table" then
+            for _, obj in ipairs(prev.drawings) do
+                pcall(function() obj:Remove() end)
+            end
+        end
+        if type(prev.guis) == "table" then
+            for _, gui in ipairs(prev.guis) do
+                pcall(function() gui:Destroy() end)
+            end
+        end
+    end
+    pcall(function()
+        if getgenv().theme_event then getgenv().theme_event:Destroy() end
+    end)
+    pcall(function()
+        local prevHookCleanup = getgenv().mj_hook_Cleanup
+        getgenv().mj_hook_Cleanup = nil
+        getgenv().mj_hook_CleanupGen = nil
+        if type(prevHookCleanup) == "function" then prevHookCleanup() end
+    end)
+    getgenv().mj_render_Gui = nil
+    getgenv().mj_orbit_API = nil
+    getgenv().mj_visualESP_Clear = nil
+    getgenv().mj_movement_Cleanup = nil
+    getgenv().mj_render_Folder = nil
+    getgenv().mj_render_MakeLine = nil
+    getgenv().mj_buybotGen = (getgenv().mj_buybotGen or 0) + 1
+    local lastGen = 0
+    if type(prev) == "table" and type(prev.gen) == "number" then
+        lastGen = prev.gen
+    end
+    getgenv().mj_runtime = { gen = lastGen + 1, conns = {}, guis = {}, drawings = {} }
 end
 
 local UserInterface = (function()
@@ -280,6 +358,7 @@ local UserInterface = (function()
         UI["1"] = InstanceNew("ScreenGui", coreguiService)
         UI["1"]["Name"] = [[syndicate.club]]
         UI["1"]["ZIndexBehavior"] = Enum.ZIndexBehavior.Global
+        mj_trackGui(UI["1"])
     
         UI["2"] = InstanceNew("Frame", UI["1"])
         UI["2"]["BorderSizePixel"] = 0
@@ -424,15 +503,13 @@ local UserInterface = (function()
         Shadow1.Image = "rbxassetid://8992230677"
         Shadow1.SliceCenter = Rect.new(Vector2.new(0, 0), Vector2.new(99, 99))
     
-        local text_coroutine = coroutine.create(function ()
-            while TaskWait() do
-                for i = 1, #Texts do
-                    TaskWait(2)
-                    ChangeText(UI["a"], Texts[i])
-                end
-            end
+        local mj_gen_footer = getgenv().mj_runtime.gen
+        task.spawn(function()
+            TaskWait(2)
+            local rt = getgenv().mj_runtime
+            if rt == nil or rt.gen ~= mj_gen_footer then return end
+            pcall(ChangeText, UI["a"], Texts[1])
         end)
-        coroutine.resume(text_coroutine)
     
         function Configuration:Tab( Tab_Name )
             if not type(Tab_Name) == "string" then return end
@@ -1596,13 +1673,13 @@ local UserInterface = (function()
                                 SlideTrans({ Position = game.UserInputService:GetMouseLocation() - Vector2New(0, 36) })
                             end)
                         
-                            inputService.InputEnded:Connect(function (input)
+                            mj_trackConn(inputService.InputEnded:Connect(function (input)
                                 if input.UserInputType == Enum.UserInputType.MouseButton1 then
                                     Colorpicker.SlidingSat, Colorpicker.SlidingHue, Colorpicker.SlidingAlpha = false, false, false
                                 end
-                            end)
+                            end))
                         
-                            inputService.InputChanged:Connect(function (input)
+                            mj_trackConn(inputService.InputChanged:Connect(function (input)
                                 if input.UserInputType == Enum.UserInputType.MouseMovement then
                                     if Colorpicker.SlidingSat then
                                         SlideSaturation(input)
@@ -1612,7 +1689,7 @@ local UserInterface = (function()
                                         SlideTrans(input)
                                     end
                                 end
-                            end)
+                            end))
                         
                             ColorpickerButton.MouseButton1Click:Connect(function ()
                                 if UserInterface.Popup and UserInterface.Popup.ID ~= ColorpickerHolder.Name then
@@ -2346,7 +2423,7 @@ local UserInterface = (function()
                                 end
                             end)
                         
-                            inputService.InputBegan:Connect(function ( input, gameprocessing )
+                            mj_trackConn(inputService.InputBegan:Connect(function ( input, gameprocessing )
                                 if gameprocessing then return end
                         
                                 local mb = Keybind.FKey == "MB2" and "MouseButton2" or Keybind.FKey == "MB1" and "MouseButton1"
@@ -2371,7 +2448,7 @@ local UserInterface = (function()
                                     UserInterface.Flags[KeybindOptions.Flag .. "_info"] = {Keybind.FKey, Keybind.FMode}
                                     Keybind:UpdateList()
                                 end
-                            end)
+                            end))
                         
                             if Keybind.FKey ~= "" then
                                 Keybind:Value({ Keybind.FKey, Keybind.FMode })
@@ -2623,8 +2700,8 @@ local UserInterface = (function()
                                 PlayerOptions:Refresh()
                         
                                 SearchBar.Changed:Connect(PlayerOptions.Search)
-                                playerService.PlayerAdded:Connect(PlayerOptions.Refresh)
-                                playerService.PlayerRemoving:Connect(PlayerOptions.Refresh)
+                                mj_trackConn(playerService.PlayerAdded:Connect(PlayerOptions.Refresh))
+                                mj_trackConn(playerService.PlayerRemoving:Connect(PlayerOptions.Refresh))
                             end
                         
                             PlayerOptions:Init()
@@ -3070,23 +3147,23 @@ local UserInterface = (function()
             end
         end)
     
-        inputService.InputChanged:Connect(function (input)
+        mj_trackConn(inputService.InputChanged:Connect(function (input)
             if input == dragInput and dragging then
                 local delta = input.Position - dragStart
                 local yPos = (startPos.Y.Offset + delta.Y) < -36 and -36 or startPos.Y.Offset + delta.Y
                 dragObject:TweenPosition(UDim2New(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, yPos), "Out", "Quad", .15, true)
             end
-        end)
+        end))
     
         do
             do
-                inputService.InputBegan:Connect(function(input, gameproc)
+                mj_trackConn(inputService.InputBegan:Connect(function(input, gameproc)
                     if gameproc then return end
                 
                     if input.KeyCode == Enum.KeyCode.RightShift then
                         UI["2"].Visible = not UI["2"].Visible
                     end
-                end)
+                end))
             end
             do
                 function UserInterface:GetConfig()
@@ -3654,13 +3731,21 @@ local nigga = (function()
                 local da_hood = {
                     functions = {}
                 }
-                
+                 
                 local camera = workspace.CurrentCamera
-                
+                 
                 local connect = include "Connect"
                 local Lerp = include "lerp"
                 local Loops = include "Loops"
                 local DrawingClass = include "DrawingClass"
+                 
+                local mj_gen_hooks
+                local myIndexHook, prevIndexHook
+                local myGetAimFn, baseSolverFn, aimModuleRef
+                local function hookGenAlive()
+                    local okH, rtH = pcall(function() return getgenv().mj_runtime end)
+                    return okH and type(rtH) == "table" and rtH.gen == mj_gen_hooks
+                end
                 
                 local function capitalizeFirst(str)
                     return str:sub(1,1):upper() .. str:sub(2):lower()
@@ -4322,8 +4407,9 @@ local nigga = (function()
                                 boost_value = Instance.new("BindableEvent")
                             }
                             
+                            local mj_gen_smooth = getgenv().mj_runtime.gen
                             task.spawn(function ()
-                                while task.wait() do
+                                while task.wait() and mj_gen_smooth == getgenv().mj_runtime.gen do
                                     local start_value = aimassist.smoothness.smoothing_start
                                     local end_value = aimassist.smoothness.smoothing_end
                                     local boost_value = aimassist.smoothness.smoothing_boost
@@ -4423,8 +4509,9 @@ local nigga = (function()
                                 end
                             end
                             
+                            local mj_gen_gac_aa = getgenv().mj_runtime.gen
                             local g_a_c = function ()
-                                while run_gac do
+                                while run_gac and mj_gen_gac_aa == getgenv().mj_runtime.gen do
                                     TaskWait(0.01)
                             
                                     get_aim_assist_character()
@@ -4733,7 +4820,7 @@ local nigga = (function()
                                 end)
                             end
                             
-                            LocalPlayer.CharacterAdded:Connect(silentaim.init)
+                            mj_trackConn(LocalPlayer.CharacterAdded:Connect(silentaim.init))
                             silentaim:init()
 
                             local function fetchRedirectPoint()
@@ -4748,12 +4835,15 @@ local nigga = (function()
                             end
 
                             do
+                                mj_gen_hooks = getgenv().mj_runtime.gen
                                 local okmod, aimModule = pcall(function()
                                     return require(replicatedStorage.Modules.GunHandler)
                                 end)
                                 if okmod and type(aimModule) == "table" and aimModule.getAim then
-                                    local baseSolver = aimModule.getAim
-                                    aimModule.getAim = function(...)
+                                    baseSolverFn = aimModule.getAim
+                                    aimModuleRef = aimModule
+                                    myGetAimFn = function(...)
+                                        if not hookGenAlive() then return baseSolverFn(...) end
                                         local packed = table.pack(...)
                                         local muzzlePos = nil
                                         local rangeNum = nil
@@ -4774,8 +4864,9 @@ local nigga = (function()
                                                 end
                                             end
                                         end
-                                        return baseSolver(table.unpack(packed, 1, packed.n))
+                                        return baseSolverFn(table.unpack(packed, 1, packed.n))
                                     end
+                                    aimModule.getAim = myGetAimFn
                                 else
                                     warn("[SA] aim solver not found, solver hook off")
                                 end
@@ -4785,17 +4876,19 @@ local nigga = (function()
                                 local okmt, mterr = pcall(function()
                                     local aimMouse = LocalPlayer:GetMouse()
                                     local mt = getrawmetatable(game)
-                                    local prevIndex = mt.__index
+                                    prevIndexHook = mt.__index
                                     setreadonly(mt, false)
-                                    mt.__index = newcclosure(function(self, key)
+                                    myIndexHook = newcclosure(function(self, key)
+                                        if not hookGenAlive() then return prevIndexHook(self, key) end
                                         if self == aimMouse and (key == "Hit" or key == "HitCFrame") then
                                             local redirect = fetchRedirectPoint()
                                             if redirect then
                                                 return CFrameNew(redirect)
                                             end
                                         end
-                                        return prevIndex(self, key)
+                                        return prevIndexHook(self, key)
                                     end)
+                                    mt.__index = myIndexHook
                                     setreadonly(mt, true)
                                 end)
                                 if not okmt then
@@ -4808,6 +4901,7 @@ local nigga = (function()
                                     local mainEvent = replicatedStorage:WaitForChild("MainEvent", 5)
                                     local prevCall
                                     prevCall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+                                        if not hookGenAlive() then return prevCall(self, ...) end
                                         local method = getnamecallmethod()
                                         local isExec = false
                                         pcall(function()
@@ -4836,7 +4930,26 @@ local nigga = (function()
                                     warn("[SA] namecall hook failed:", tostring(nherr))
                                 end
                             end
-
+ 
+                            getgenv().mj_hook_Cleanup = function()
+                                pcall(function()
+                                    if myIndexHook then
+                                        local okM, mtM = pcall(function() return getrawmetatable(game) end)
+                                        if okM and type(mtM) == "table" and mtM.__index == myIndexHook then
+                                            setreadonly(mtM, false)
+                                            mtM.__index = prevIndexHook
+                                            setreadonly(mtM, true)
+                                        end
+                                    end
+                                end)
+                                pcall(function()
+                                    if myGetAimFn and aimModuleRef and aimModuleRef.getAim == myGetAimFn then
+                                        aimModuleRef.getAim = baseSolverFn
+                                    end
+                                end)
+                            end
+                            getgenv().mj_hook_CleanupGen = mj_gen_hooks
+ 
                             do
                                 task.spawn(function()
                                     local okrf, queryRemote = pcall(function()
@@ -4913,8 +5026,9 @@ local nigga = (function()
                                 end
                             end
                             
+                            local mj_gen_gac_sa = getgenv().mj_runtime.gen
                             local g_a_c = function ()
-                                while run_gac do
+                                while run_gac and mj_gen_gac_sa == getgenv().mj_runtime.gen do
                                     TaskWait(0.01)
                             
                                     local action = silentaim.sync_with_aim_assist and synced or normal
@@ -5240,6 +5354,7 @@ local nigga = (function()
                                     rg["ZIndexBehavior"] = Enum.ZIndexBehavior.Sibling
                                     rg["DisplayOrder"] = 6
                                     getgenv().mj_render_Gui = rg
+                                    mj_trackGui(rg)
                                 end
                                 if not getgenv().mj_render_Folder then
                                     getgenv().mj_render_Folder = function(name)
@@ -5252,6 +5367,7 @@ local nigga = (function()
                                             rg["ZIndexBehavior"] = Enum.ZIndexBehavior.Sibling
                                             rg["DisplayOrder"] = 6
                                             getgenv().mj_render_Gui = rg
+                                            mj_trackGui(rg)
                                         end
                                         local f = rg:FindFirstChild(name)
                                         if not f then
@@ -5703,25 +5819,28 @@ local nigga = (function()
                                 aim_Ass_character.changecolor(Color3.fromRGB(255,255,255))
                                 silent_Ass_character.changecolor(Color3.fromRGB(255,255,255))
                                 
+                                local mj_gen_indicator = getgenv().mj_runtime.gen
                                 local randomshit = coroutine.create(function ()
-                                    while task.wait() do
-                                        indicatorClass:update()
-                                
-                                        do
-                                            local character_available = aimassist.character and aimassist.character.Name
-                                            local textValue = character_available and aimassist.character.Name or "aim assist : no target"
-                                            aim_Ass_character.changetext(textValue)
+                                    while task.wait() and mj_gen_indicator == getgenv().mj_runtime.gen do
+                                        if indicatorClass.enabled then
+                                            indicatorClass:update()
+
+                                            do
+                                                local character_available = aimassist.character and aimassist.character.Name
+                                                local textValue = character_available and aimassist.character.Name or "aim assist : no target"
+                                                aim_Ass_character.changetext(textValue)
                                     
-                                            local aim_vis = table.find(indicatorClass.indicate, "aim assist") and indicatorClass.enabled and true or false
-                                            aim_Ass_character.changeVisibility(aim_vis)
-                                        end
-                                        do
-                                            local character_available = silentaim.character and silentaim.character.Name
-                                            local textValue = character_available and silentaim.character.Name or "silent aim : no target"
-                                            silent_Ass_character.changetext(textValue)
+                                                local aim_vis = table.find(indicatorClass.indicate, "aim assist") and indicatorClass.enabled and true or false
+                                                aim_Ass_character.changeVisibility(aim_vis)
+                                            end
+                                            do
+                                                local character_available = silentaim.character and silentaim.character.Name
+                                                local textValue = character_available and silentaim.character.Name or "silent aim : no target"
+                                                silent_Ass_character.changetext(textValue)
                                     
-                                            local aim_vis = table.find(indicatorClass.indicate, "silent aim") and indicatorClass.enabled and true or false
-                                            silent_Ass_character.changeVisibility(aim_vis)
+                                                local aim_vis = table.find(indicatorClass.indicate, "silent aim") and indicatorClass.enabled and true or false
+                                                silent_Ass_character.changeVisibility(aim_vis)
+                                            end
                                         end
                                     end
                                 end)
@@ -6282,8 +6401,14 @@ local nigga = (function()
                                     color = Color3.fromRGB(255,255,255)
                                 }
                                 
+                                local Render
                                 local aimpos = rendervisualizer:Toggle({ title = "show aim position", default = false, callback = function (bool)
                                     show_aimpos.enabled = bool
+                                    if bool then
+                                        Loops:AddToHeartbeat("render_shitt", Render)
+                                    else
+                                        Loops:RemoveFromHeartbeat("render_shitt")
+                                    end
                                 end })
                                 aimpos:Colorpicker({ default = Color3.fromRGB(255, 255, 255), transparency = 1, callback = function (value, transparency)
                                     show_aimpos.color = value
@@ -6368,10 +6493,9 @@ local nigga = (function()
                                     aimposVisualizer.Size = UDim2New(0, pr * 2, 0, pr * 2)
                                 end
                             
-                                local function Render()
+                                Render = function()
                                     aimposF()
                                 end
-                                Loops:AddToHeartbeat("render_shitt", Render)
                             end
                         end
                         do
@@ -6795,107 +6919,156 @@ local nigga = (function()
                                 end
                             end
                             
+                            
                             do
-                                local macro = {
-                                    enabled = false,
-                                    keybind = false,
-                                    speed = 1,
-                                    type = "first person",
-                                    macroabuse = false
+                                local autoStomp = {
+                                    enabled = false
                                 }
-                            
-                                function macro:first_person()
-                                    if not da_hood.functions:is_localplayer_alive() then return end
-                                    if not macro.enabled then return end
-                                    if not macro.keybind then return end
-                            
-                                    task.wait(macro.speed / 10000)
-                                    inputManager:SendMouseWheelEvent("0", "0", true, game)
-                                    task.wait(macro.speed / 10000)
-                                    inputManager:SendMouseWheelEvent("0", "0", false, game)
-                                    task.wait(macro.speed / 10000)
-                                    inputManager:SendMouseWheelEvent("0", "0", true, game)
-                                    task.wait(macro.speed / 10000)
-                                    inputManager:SendMouseWheelEvent("0", "0", false, game)
-                                    task.wait(macro.speed / 10000)
-                                end
-                            
-                                function macro:third_person()
-                                    if not da_hood.functions:is_localplayer_alive() then return end
-                                    if not macro.enabled then return end
-                                    if not macro.keybind then return end
-                            
-                                    task.wait(macro.speed / 10000)
-                                    inputManager:SendKeyEvent(true, "I", false, game)
-                                    task.wait(macro.speed / 10000)
-                                    inputManager:SendKeyEvent(true, "O", false, game)
-                                    task.wait(macro.speed / 10000)
-                                    inputManager:SendKeyEvent(true, "I", false, game)
-                                    task.wait(macro.speed / 10000)
-                                    inputManager:SendKeyEvent(true, "O", false, game)
-                                    task.wait(macro.speed / 10000)
-                                end
-                            
-                                function macro:macro_abuse(input)
-                                    if not da_hood.functions:is_localplayer_alive() then return end
-                                    if not macro.macroabuse then return end
-                                    if not macro.enabled then return end
-                            
-                                    if input.KeyCode == Enum.KeyCode.I then
-                                        if LocalPlayer.Character:FindFirstChild("GunScript", true) ~= nil or LocalPlayer.Character:FindFirstChild("FlameThrowerScript", true) ~= nil or LocalPlayer.Character:FindFirstChild("RPGScript", true) ~= nil then
-                                            local CAMERA_CONTROLLER = require(LocalPlayer:WaitForChild("PlayerScripts"):WaitForChild("PlayerModule")):GetCameras().activeCameraController
-                                            CAMERA_CONTROLLER:SetCameraToSubjectDistance(CAMERA_CONTROLLER.currentSubjectDistance - 5)
+                                local antiStomp = {
+                                    enabled = false,
+                                    active = false,
+                                    loop = nil
+                                }
+
+                                local STOMP_RANGE = 12
+
+                                local function find_knocked_body()
+                                    local character = LocalPlayer.Character
+                                    local hrp = character and character:FindFirstChild("HumanoidRootPart")
+                                    if not hrp then return nil end
+                                    local best, bestDist = nil, STOMP_RANGE
+                                    for _, player in ipairs(playerService:GetPlayers()) do
+                                        if player ~= LocalPlayer and player.Character then
+                                            local thrp = player.Character:FindFirstChild("HumanoidRootPart")
+                                            local hum = player.Character:FindFirstChildOfClass("Humanoid")
+                                            if thrp and hum then
+                                                local dist = (hrp.Position - thrp.Position).Magnitude
+                                                if dist <= bestDist then
+                                                    local be = player.Character:FindFirstChild("BodyEffects")
+                                                    local ko = be and (be:FindFirstChild("K.O") or be:FindFirstChild("KO"))
+                                                    if (ko and ko.Value) or hum.Health <= 0 then
+                                                        best, bestDist = player, dist
+                                                    end
+                                                end
+                                            end
                                         end
                                     end
-                            
-                                    if input.KeyCode == Enum.KeyCode.O then
-                                        if LocalPlayer.Character:FindFirstChild("GunScript", true) ~= nil or LocalPlayer.Character:FindFirstChild("FlameThrowerScript", true) ~= nil or LocalPlayer.Character:FindFirstChild("RPGScript", true) ~= nil then
-                                            local CAMERA_CONTROLLER = require(LocalPlayer:WaitForChild("PlayerScripts"):WaitForChild("PlayerModule")):GetCameras().activeCameraController
-                                            CAMERA_CONTROLLER:SetCameraToSubjectDistance(CAMERA_CONTROLLER.currentSubjectDistance + 5)
+                                    return best
+                                end
+
+                                local function anti_stomp_force_reset()
+                                    local character = LocalPlayer.Character
+                                    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+                                    if not humanoid then
+                                        return
+                                    end
+                                    pcall(function()
+                                        humanoid:ChangeState(Enum.HumanoidStateType.Dead)
+                                    end)
+                                    pcall(function()
+                                        humanoid.Health = 0
+                                    end)
+                                    pcall(function()
+                                        character:BreakJoints()
+                                    end)
+                                end
+
+                                local mj_gen_stomp = getgenv().mj_runtime.gen
+                                local auto_stomp_loop = function ()
+                                    while mj_gen_stomp == getgenv().mj_runtime.gen do
+                                        if autoStomp.enabled and da_hood.functions:is_localplayer_alive() then
+                                            if find_knocked_body() then
+                                                local main_event = da_hood.functions:get_main_event()
+                                                if main_event then
+                                                    pcall(function() main_event:FireServer("Stomp") end)
+                                                end
+                                            end
                                         end
+                                        task.wait(0.1)
                                     end
                                 end
-                            
-                                connect(inputService.InputBegan, function(input) macro:macro_abuse(input) end)
-                            
-                                local run_macro = false
-                            
-                                local macro_coroutine = function ()
-                                    while run_macro do
-                                        task.wait()
-                                        if macro.type == "first person" then
-                                            macro:first_person()
-                                        elseif macro.type == "third person" then
-                                            macro:third_person()
+                                coroutine.wrap(auto_stomp_loop)()
+
+                                local function anti_stomp_connect()
+                                    if antiStomp.loop then return end
+                                    antiStomp.loop = connect(rsService.Heartbeat, function()
+                                        if mj_gen_stomp ~= getgenv().mj_runtime.gen then return end
+                                        if not antiStomp.enabled or not antiStomp.active then return end
+                                        local character = LocalPlayer.Character
+                                        local be = character and character:FindFirstChild("BodyEffects")
+                                        local ko = be and be:FindFirstChild("K.O")
+                                        if ko and ko.Value then
+                                            anti_stomp_force_reset()
                                         end
+                                    end)
+                                end
+                                local function anti_stomp_disconnect()
+                                    if antiStomp.loop then
+                                        pcall(function() antiStomp.loop:Disconnect() end)
+                                        antiStomp.loop = nil
                                     end
                                 end
-                            
-                                local macroHandlers = {}
-                                macroHandlers.stop = function() run_macro = false end
-                                macroHandlers.resume = function() run_macro = true coroutine.wrap(macro_coroutine)() end
-                            
-                                local macro_misc = miscTab:Section("macro", "left")
-                            
-                                local macro_toggle = macro_misc:Toggle({ title = "enabled", default = false, callback = function (bool)
-                                    macro.enabled = bool
+
+                                local anti_misc = miscTab:Section("anti stuff", "left")
+
+                                anti_misc:Toggle({ title = "auto stomp", default = false, callback = function (bool)
+                                    autoStomp.enabled = bool
                                 end })
-                                macro_toggle:Keybind({ title = "macro", keybindlist = true, keybindname = "macro", callback = function (key)
-                                    macro.keybind = key
-                                    if key and macro.enabled then
-                                        macroHandlers.resume()
+
+                                local anti_stomp_toggle = anti_misc:Toggle({ title = "anti stomp", default = false, callback = function (bool)
+                                    antiStomp.enabled = bool
+                                    if bool then
+                                        anti_stomp_connect()
                                     else
-                                        macroHandlers.stop()
+                                        antiStomp.active = false
+                                        anti_stomp_disconnect()
                                     end
                                 end })
-                                macro_misc:Slider({ title = "macro speed", suffix = "", min = 1, max = 100, default = 1,float = 1, callback = function (value)
-                                    macro.speed = value
-                                end })
-                                macro_misc:Dropdown({ title = "macro type", values = {"first person", "third person"}, default = "first person", multi = false, callback = function (value)
-                                    macro.type = value
-                                end })
-                                macro_misc:Toggle({ title = "macro abuse", default = false, callback = function (bool)
-                                    macro.macroabuse = bool
+                                local function getAntiStompKeybind()
+                                    local okC, conns = pcall(function() return getconnections(inputService.InputBegan) end)
+                                    if not okC or type(conns) ~= "table" then return nil end
+                                    for _, c in ipairs(conns) do
+                                        local okF, fn = pcall(function() return c.Function end)
+                                        if okF and type(fn) == "function" then
+                                            local isOurs, kbRef = false, nil
+                                            for j = 1, 60 do
+                                                local okU, uv = pcall(function() return debug.getupvalue(fn, j) end)
+                                                if not okU or uv == nil then break end
+                                                if type(uv) == "table" then
+                                                    if rawget(uv, "Title") == "anti stomp" and type(rawget(uv, "Callback")) == "function" then
+                                                        isOurs = true
+                                                    end
+                                                    if type(rawget(uv, "FMode")) == "string" and type(rawget(uv, "Toggled")) == "boolean" then
+                                                        kbRef = uv
+                                                    end
+                                                end
+                                            end
+                                            if isOurs and kbRef then
+                                                return kbRef
+                                            end
+                                        end
+                                    end
+                                    return nil
+                                end
+                                local antiStompLastBoundKey = nil
+                                do
+                                    local kb0 = getAntiStompKeybind()
+                                    if kb0 then antiStompLastBoundKey = rawget(kb0, "FKey") end
+                                end
+                                anti_stomp_toggle:Keybind({ title = "anti stomp", keybindlist = true, keybindname = "anti stomp", mode = "Toggle", callback = function (key)
+                                    if not antiStomp.enabled then return end
+                                    local kbNow = getAntiStompKeybind()
+                                    local curKey = kbNow and rawget(kbNow, "FKey") or nil
+                                    if curKey ~= antiStompLastBoundKey then
+                                        antiStompLastBoundKey = curKey
+                                        return
+                                    end
+                                    local mode = kbNow and rawget(kbNow, "FMode") or nil
+                                    if mode == "Toggle" then
+                                        antiStomp.active = not antiStomp.active
+                                    elseif key then
+                                        antiStomp.active = not antiStomp.active
+                                    end
                                 end })
                             end
                             
@@ -6995,8 +7168,9 @@ local nigga = (function()
                                         keybind = false
                                     }
                             
+                                    local mj_gen_fakelat = getgenv().mj_runtime.gen
                                     fakelatency.enable = function ()
-                                        while task.wait() do
+                                        while task.wait() and mj_gen_fakelat == getgenv().mj_runtime.gen do
                                             if fakelatency.enabled and fakelatency.keybind then
                                                 settings().Network.IncomingReplicationLag = fakelatency.amount
                                                 task.wait(1)
@@ -7240,11 +7414,18 @@ local nigga = (function()
                                 end
                             end })
                             
+                            local lastPlayerNameText, lastPlayerIndexText = nil, nil
                             local function update_thing()
                                 local current_player = playerlist:GetCurrentPlayer()
                                 if not current_player then 
-                                    player_name:ChangeText("player name : ...")
-                                    index:ChangeText("player index : ...")
+                                    if lastPlayerNameText ~= "player name : ..." then
+                                        player_name:ChangeText("player name : ...")
+                                        lastPlayerNameText = "player name : ..."
+                                    end
+                                    if lastPlayerIndexText ~= "player index : ..." then
+                                        index:ChangeText("player index : ...")
+                                        lastPlayerIndexText = "player index : ..."
+                                    end
                                     return
                                 end
                             
@@ -7256,12 +7437,21 @@ local nigga = (function()
                                     end
                                 end
                             
-                                player_name:ChangeText("player name : " .. tostring(current_player))
-                                index:ChangeText("player index : " .. tostring(indexinlist))
+                                local newNameText = "player name : " .. tostring(current_player)
+                                if newNameText ~= lastPlayerNameText then
+                                    player_name:ChangeText(newNameText)
+                                    lastPlayerNameText = newNameText
+                                end
+                                local newIndexText = "player index : " .. tostring(indexinlist)
+                                if newIndexText ~= lastPlayerIndexText then
+                                    index:ChangeText(newIndexText)
+                                    lastPlayerIndexText = newIndexText
+                                end
                             end
                             
+                            local mj_gen_plist = getgenv().mj_runtime.gen
                             local loop_update_thing = coroutine.create(function()
-                                while wait() do
+                                while wait() and mj_gen_plist == getgenv().mj_runtime.gen do
                                     update_thing()
                                 end
                             end)
@@ -7354,9 +7544,56 @@ local nigga = (function()
                                 config_RefreshKeep()
                             end })
 
+                            local unload_owner_gen = getgenv().mj_runtime.gen
                             profiles:Button({ title = "unload", callback = function ()
+                                pcall(function()
+                                    if getgenv().mj_hook_CleanupGen == unload_owner_gen then
+                                        local ownHookCleanup = getgenv().mj_hook_Cleanup
+                                        getgenv().mj_hook_Cleanup = nil
+                                        getgenv().mj_hook_CleanupGen = nil
+                                        if type(ownHookCleanup) == "function" then ownHookCleanup() end
+                                    end
+                                end)
+                                pcall(function()
+                                    local rt = getgenv().mj_runtime
+                                    if type(rt) ~= "table" then return end
+                                    rt.gen = (type(rt.gen) == "number" and rt.gen or 0) + 1
+                                    if type(rt.conns) == "table" then
+                                        for _, conn in ipairs(rt.conns) do
+                                            pcall(function() conn:Disconnect() end)
+                                        end
+                                        table.clear(rt.conns)
+                                    end
+                                    if type(rt.drawings) == "table" then
+                                        for _, obj in ipairs(rt.drawings) do
+                                            pcall(function() obj:Remove() end)
+                                        end
+                                        table.clear(rt.drawings)
+                                    end
+                                    if type(rt.guis) == "table" then
+                                        for _, gui in ipairs(rt.guis) do
+                                            pcall(function() gui:Destroy() end)
+                                        end
+                                        table.clear(rt.guis)
+                                    end
+                                end)
+                                pcall(function()
+                                    if getgenv().theme_event then getgenv().theme_event:Destroy() end
+                                    getgenv().theme_event = nil
+                                end)
+                                local movementCleanup
+                                local espClear
+                                pcall(function()
+                                    movementCleanup = getgenv().mj_movement_Cleanup
+                                    espClear = getgenv().mj_visualESP_Clear
+                                    getgenv().mj_orbit_API = nil
+                                    getgenv().mj_visualESP_Clear = nil
+                                    getgenv().mj_movement_Cleanup = nil
+                                    getgenv().mj_render_Folder = nil
+                                    getgenv().mj_render_MakeLine = nil
+                                end)
                                 pcall(function() getgenv().mj_buybotGen = (getgenv().mj_buybotGen or 0) + 1 end)
-                                pcall(function() if getgenv().mj_movement_Cleanup then getgenv().mj_movement_Cleanup() end end)
+                                pcall(function() if movementCleanup then movementCleanup() end end)
                                 pcall(function()
                                     for _, conns in pairs({Loops.Heartbeat, Loops.RenderStepped}) do
                                         for name, conn in pairs(conns) do
@@ -7365,7 +7602,7 @@ local nigga = (function()
                                         end
                                     end
                                 end)
-                                pcall(function() if getgenv().mj_visualESP_Clear then getgenv().mj_visualESP_Clear() end end)
+                                pcall(function() if espClear then espClear() end end)
                                 pcall(function()
                                     if getgenv().mj_render_Gui then getgenv().mj_render_Gui:Destroy() end
                                     getgenv().mj_render_Gui = nil
@@ -7885,6 +8122,7 @@ local nigga = (function()
                                 g["ZIndexBehavior"] = Enum.ZIndexBehavior.Sibling
                                 g["DisplayOrder"] = 5
                                 visualESP.Gui = g
+                                mj_trackGui(g)
                                 return g
                             end
 
@@ -8499,10 +8737,11 @@ local nigga = (function()
                         
                         local run_gac = false
                         
+                        local mj_gen_gac_uni = getgenv().mj_runtime.gen
                         local g_a_c = function ()
-                            while run_gac do
+                            while run_gac and mj_gen_gac_uni == getgenv().mj_runtime.gen do
                                 TaskWait()
-                        
+
                                 if aimassist.lock_target then
                                     local char = universal.functions:getnearestplayertomouse(aimassist.fieldofview, aimassist.configuration)
                                     if char ~= nil and aimassist.lock_target_state == false then
@@ -8805,8 +9044,9 @@ local nigga = (function()
                         local title = fucking_shitty_indicator:new_indicator("joker.universal")
                         aim_Ass_character.changecolor(Color3.fromRGB(255,255,255))
                         
+                        local mj_gen_uind = getgenv().mj_runtime.gen
                         local randomshit = coroutine.create(function ()
-                            while wait() do
+                            while wait() and mj_gen_uind == getgenv().mj_runtime.gen do
                                 local showshit = aimassist.character
                                 local textshit = showshit and aimassist.character.Name or "no target"
                                 aim_Ass_character.changetext(textshit)
@@ -9229,11 +9469,18 @@ local nigga = (function()
                             end
                         end })
                         
+                        local lastPlayerNameText, lastPlayerIndexText = nil, nil
                         local function update_thing()
                             local current_player = playerlist:GetCurrentPlayer()
                             if not current_player then 
-                                player_name:ChangeText("player name : ...")
-                                index:ChangeText("player index : ...")
+                                if lastPlayerNameText ~= "player name : ..." then
+                                    player_name:ChangeText("player name : ...")
+                                    lastPlayerNameText = "player name : ..."
+                                end
+                                if lastPlayerIndexText ~= "player index : ..." then
+                                    index:ChangeText("player index : ...")
+                                    lastPlayerIndexText = "player index : ..."
+                                end
                                 return
                             end
                         
@@ -9245,12 +9492,21 @@ local nigga = (function()
                                 end
                             end
                         
-                            player_name:ChangeText("player name : " .. tostring(current_player))
-                            index:ChangeText("player index : " .. tostring(indexinlist))
+                            local newNameText = "player name : " .. tostring(current_player)
+                            if newNameText ~= lastPlayerNameText then
+                                player_name:ChangeText(newNameText)
+                                lastPlayerNameText = newNameText
+                            end
+                            local newIndexText = "player index : " .. tostring(indexinlist)
+                            if newIndexText ~= lastPlayerIndexText then
+                                index:ChangeText(newIndexText)
+                                lastPlayerIndexText = newIndexText
+                            end
                         end
                         
+                        local mj_gen_plist_uni = getgenv().mj_runtime.gen
                         local loop_update_thing = coroutine.create(function()
-                            while wait() do
+                            while wait() and mj_gen_plist_uni == getgenv().mj_runtime.gen do
                                 update_thing()
                             end
                         end)
