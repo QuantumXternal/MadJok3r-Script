@@ -8,7 +8,7 @@
     @OWNER
         khian-draft-cubero-john
 
-    @MJscription
+    @MJ Description
         Beware of joker.
 ]]
 
@@ -998,10 +998,11 @@ local UserInterface = (function()
                                     local function ButtonClick()
                                         tweenService:Create(bodypart, TweenInfo.new(0.2), { BackgroundColor3 = theme.accent }):Play()
                                         BoneSelector["FValues"][name].Selected = true
-                        
+
                                         if not self_conn then
                                             self_conn = theme_event.Event:Connect(function ()
-                                                if BoneSelector["FValues"][name].Selected then
+                                                local fv = BoneSelector["FValues"][name]
+                                                if fv and fv.Selected then
                                                     bodypart.BackgroundColor3 = theme.accent
                                                 end
                                             end)
@@ -1037,10 +1038,11 @@ local UserInterface = (function()
                                     local function ButtonClick()
                                         bodypart.BackgroundColor3 = theme.accent
                                         BoneSelector["FValues"][name].Selected = true
-                        
+
                                         if not self_conn then
                                             self_conn = theme_event.Event:Connect(function ()
-                                                if BoneSelector["FValues"][name].Selected then
+                                                local fv = BoneSelector["FValues"][name]
+                                                if fv and fv.Selected then
                                                     bodypart.BackgroundColor3 = theme.accent
                                                 end
                                             end)
@@ -1878,7 +1880,7 @@ local UserInterface = (function()
                                         Dropdown.FValues[name].Selected = false
                                     end
                         
-                                    DropdownButton.MouseButton1Down:Connect(function ()
+                                    DropdownButton.MouseButton1Click:Connect(function ()
                                         Dropdown:Set(name)
                                     end)
                                     
@@ -1890,9 +1892,10 @@ local UserInterface = (function()
                                         Objects = Objects,
                                         Selected = false,
                                     }
-                        
-                                    theme_event.Event:Connect(function ()
-                                        if Dropdown["FValues"][name].Selected then
+
+                                    Dropdown.FValues[name].ThemeConn = theme_event.Event:Connect(function ()
+                                        local fv = Dropdown["FValues"][name]
+                                        if fv and fv.Selected then
                                             DBName.TextColor3 = theme.accent
                                         end
                                     end)
@@ -1997,7 +2000,8 @@ local UserInterface = (function()
                         
                             function Dropdown:Refresh(tbl)
                                 for _,v in pairs(Dropdown.FValues) do
-                                    v.Objects.Name:Destroy()
+                                    if v.ThemeConn then pcall(function() v.ThemeConn:Disconnect() end) end
+                                    if v.Objects and v.Objects.Name then pcall(function() v.Objects.Name:Destroy() end) end
                                     v = nil
                                 end
                         
@@ -2480,10 +2484,15 @@ local UserInterface = (function()
                             end)
                         
                             local PlayerOptions = {
-                                CurrentPlayer = ""
+                                CurrentPlayer = "",
+                                Conns = {},
                             }
-                        
+
                             function PlayerOptions:Clear()
+                                for _, conn in pairs(PlayerOptions.Conns) do
+                                    pcall(function() conn:Disconnect() end)
+                                end
+                                table.clear(PlayerOptions.Conns)
                                 for _, child in ipairs(Players:GetChildren()) do
                                     if child:IsA("Frame") then
                                         child:Destroy()
@@ -2545,10 +2554,11 @@ local UserInterface = (function()
                                     if PlayerOptions.CurrentPlayer == player_name then
                                         PlayerName.TextColor3 = Color3FromRGB(129, 129, 127)
                                         PlayerOptions.CurrentPlayer = nil
-                        
+
                                         if self_conn then
                                             self_conn:Disconnect(); self_conn = nil
                                         end
+                                        PlayerOptions.Conns[player_name] = nil
                                     else
                                         for i, v in ipairs(Players:GetDescendants()) do
                                             if v.Name == "PlayerName" then
@@ -2557,13 +2567,14 @@ local UserInterface = (function()
                                         end
                                         PlayerName.TextColor3 = theme.accent
                                         PlayerOptions.CurrentPlayer = player_name
-                                        
+
                                         if not self_conn then
                                             self_conn = theme_event.Event:Connect(function ()
-                                                if PlayerOptions.CurrentPlayer == player_name then
+                                                if PlayerOptions.CurrentPlayer == player_name and PlayerName.Parent then
                                                     PlayerName.TextColor3 = theme.accent
                                                 end
                                             end)
+                                            PlayerOptions.Conns[player_name] = self_conn
                                         end
                                     end
                                 end
@@ -3084,8 +3095,10 @@ local UserInterface = (function()
                     for _, v in pairs(UserInterface.ConfigFlags) do
                         local Value = UserInterface.Flags[_]
                 
-                        if typeof(Value) == "EnumItem" then
-                            ConfigTable[_] = Value
+                        if Value == nil then
+                            continue
+                        elseif typeof(Value) == "EnumItem" then
+                            ConfigTable[_] = Value.Name
                 		elseif typeof(Value) == "Color3" then
                 			ConfigTable[_] = { Value:ToHex() }
                         else
@@ -3097,13 +3110,17 @@ local UserInterface = (function()
                 end
                 
                 function UserInterface:LoadConfig(config)
-                    local Config = httpService:JSONDecode(config)
+                    local ok, Config = pcall(httpService.JSONDecode, httpService, config)
+                    if not ok or typeof(Config) ~= "table" then
+                        warn("[Config] Load failed: bad file data.")
+                        return
+                    end
                     
                     for _, v in pairs(Config) do
                         local Func = UserInterface.ConfigFlags[_]
                 
                         if Func then
-                            Func(v)
+                            pcall(Func, v)
                         end
                     end
                 end
@@ -5215,73 +5232,143 @@ local nigga = (function()
                                     showline.transparency = transparency
                                 end })
                                 
-                                local FOV = DrawingClass({ "Circle", { Visible = false, Transparency = 1, ZIndex = 3, Thickness = 1  } })
-                                local FOVOutline = DrawingClass({ "Circle", { Visible = false, Transparency = 1, ZIndex = 2, Color = Color3.fromRGB(0,0,0), Thickness = 3  } })
-                                local LINE = DrawingClass({ "Line", { Visible = false, Transparency = 1  } })
+                                if not getgenv().mj_render_Gui then
+                                    local rg = InstanceNew("ScreenGui", coreguiService)
+                                    rg["Name"] = [[MJ_Render]]
+                                    rg["ResetOnSpawn"] = false
+                                    rg["IgnoreGuiInset"] = true
+                                    rg["ZIndexBehavior"] = Enum.ZIndexBehavior.Sibling
+                                    rg["DisplayOrder"] = 6
+                                    getgenv().mj_render_Gui = rg
+                                end
+                                if not getgenv().mj_render_Folder then
+                                    getgenv().mj_render_Folder = function(name)
+                                        local rg = getgenv().mj_render_Gui
+                                        if not rg or not rg.Parent then
+                                            rg = InstanceNew("ScreenGui", coreguiService)
+                                            rg["Name"] = [[MJ_Render]]
+                                            rg["ResetOnSpawn"] = false
+                                            rg["IgnoreGuiInset"] = true
+                                            rg["ZIndexBehavior"] = Enum.ZIndexBehavior.Sibling
+                                            rg["DisplayOrder"] = 6
+                                            getgenv().mj_render_Gui = rg
+                                        end
+                                        local f = rg:FindFirstChild(name)
+                                        if not f then
+                                            f = InstanceNew("Folder", rg)
+                                            f["Name"] = name
+                                        end
+                                        return f
+                                    end
+                                end
+                                local render_AA = getgenv().mj_render_Folder("FOV_AA")
+                                local FOVf_ = InstanceNew("Frame", render_AA)
+                                FOVf_["Name"] = [[FOVCircle]]
+                                FOVf_["BackgroundColor3"] = Color3FromRGB(255, 255, 255)
+                                FOVf_["BackgroundTransparency"] = 1
+                                FOVf_["BorderSizePixel"] = 0
+                                FOVf_["Visible"] = false
+                                local FOVf_Corner = InstanceNew("UICorner", FOVf_)
+                                FOVf_Corner["CornerRadius"] = UDim.new(0.5, 0)
+                                local FOVf_Stroke = InstanceNew("UIStroke", FOVf_)
+                                FOVf_Stroke["ApplyStrokeMode"] = Enum.ApplyStrokeMode.Border
+                                FOVf_Stroke["Thickness"] = 1
+                                FOVf_Stroke["Color"] = Color3FromRGB(255, 255, 255)
+                                local FOVo_ = InstanceNew("Frame", render_AA)
+                                FOVo_["Name"] = [[FOVOutline]]
+                                FOVo_["BackgroundTransparency"] = 1
+                                FOVo_["BorderSizePixel"] = 0
+                                FOVo_["Visible"] = false
+                                local FOVo_Corner = InstanceNew("UICorner", FOVo_)
+                                FOVo_Corner["CornerRadius"] = UDim.new(0.5, 0)
+                            local FOVo_Stroke = InstanceNew("UIStroke", FOVo_)
+                            FOVo_Stroke["ApplyStrokeMode"] = Enum.ApplyStrokeMode.Border
+                            FOVo_Stroke["Thickness"] = 2
+                            FOVo_Stroke["Color"] = Color3FromRGB(0, 0, 0)
+                                local LINEf_ = InstanceNew("Frame", render_AA)
+                                LINEf_["Name"] = [[AimLine]]
+                                LINEf_["BackgroundColor3"] = Color3FromRGB(255, 255, 255)
+                                LINEf_["BorderSizePixel"] = 0
+                                LINEf_["AnchorPoint"] = Vector2New(0.5, 0.5)
+                                LINEf_["ZIndex"] = 2
+                                LINEf_["Visible"] = false
+                                local LINEo_ = InstanceNew("Frame", render_AA)
+                                LINEo_["Name"] = [[AimLineOutline]]
+                                LINEo_["BackgroundColor3"] = Color3FromRGB(0, 0, 0)
+                                LINEo_["BorderSizePixel"] = 0
+                                LINEo_["AnchorPoint"] = Vector2New(0.5, 0.5)
+                                LINEo_["ZIndex"] = 1
+                                LINEo_["Visible"] = false
                                 
                                 local function FOVf()
                                     if not showfov.enabled then
-                                        FOV.Visible = false
-                                        FOVOutline.Visible = false
+                                        FOVf_.Visible = false
+                                        FOVo_.Visible = false
                                         return
                                     end
-                                
+
                                     local fieldofview = aimassist.fieldofview
-                            
-                                    FOV.Radius = fieldofview
-                                    FOVOutline.Radius = fieldofview
-                            
-                                    FOV.Color = showfov.color
-                                    FOV.Transparency = showfov.transparency
-                                    FOV.Position = inputService:GetMouseLocation()
-                                    FOV.Visible = true
-                            
-                                    FOVOutline.Transparency = showfov.transparency
-                                    FOVOutline.Position = inputService:GetMouseLocation()
-                                    FOVOutline.Visible = FOV.Visible and showfov.outline
+                                    local r = math.min(fieldofview, 2000)
+                                    local m = inputService:GetMouseLocation()
+
+                                    FOVf_.Size = UDim2New(0, r * 2, 0, r * 2)
+                                    FOVf_.Position = UDim2New(0, m.X - r, 0, m.Y - r)
+                                    FOVf_.BackgroundColor3 = showfov.color
+                                    FOVf_Stroke.Color = showfov.color
+                                    FOVf_Stroke.Transparency = 1 - showfov.transparency
+                                    FOVf_.Visible = true
+
+                                    FOVo_.Size = UDim2New(0, FOVf_.Size.X.Offset + 4, 0, FOVf_.Size.Y.Offset + 4)
+                                    FOVo_.Position = UDim2New(0, FOVf_.Position.X.Offset - 2, 0, FOVf_.Position.Y.Offset - 2)
+                                    FOVo_Stroke.Transparency = 1 - showfov.transparency
+                                    FOVo_.Visible = FOVf_.Visible and showfov.outline
                                 end
-                                
+
                                 local function Linef()
+                                    LINEo_.Visible = false
                                     if not showline.enabled then
-                                        LINE.Visible = false
+                                        LINEf_.Visible = false
                                         return
                                     end
-                                
+
                                     if not aimassist.enabled then
-                                        LINE.Visible = false
+                                        LINEf_.Visible = false
                                         return
                                     end
-                                
-                                    if not aimassist.keybind then
-                                        LINE.Visible = false
-                                        return
-                                    end
-                                
+
                                     if not aimassist.character then
-                                        LINE.Visible = false
+                                        LINEf_.Visible = false
                                         return
                                     end
-                                
+
                                     local position = aimassist:get_position()
                                     if position == nil then
-                                        LINE.Visible = false
+                                        LINEf_.Visible = false
                                         return
                                     end
-                                
+
                                     local screenpos, onscreen = camera:WorldToViewportPoint(position)
                                     if not onscreen then
-                                        LINE.Visible = false
+                                        LINEf_.Visible = false
                                         return
                                     end
-                                
-                                    local screencoordinates = Vector2New(screenpos.X, screenpos.Y)
-                                    LINE.From = inputService:GetMouseLocation()
-                                    LINE.To = screencoordinates
-                                    LINE.Color = showline.color
-                                    LINE.Visible = true
-                                    LINE.Transparency = showline.transparency
+
+                                    local m = inputService:GetMouseLocation()
+                                    local dx, dy = screenpos.X - m.X, screenpos.Y - m.Y
+                                    local len = math.sqrt(dx * dx + dy * dy)
+                                    LINEf_.Position = UDim2New(0, m.X + dx / 2, 0, m.Y + dy / 2)
+                                    LINEf_.Size = UDim2New(0, len, 0, 1)
+                                    LINEf_.Rotation = math.deg(math.atan2(dy, dx))
+                                    LINEf_.BackgroundColor3 = showline.color
+                                    LINEf_.BackgroundTransparency = 1 - showline.transparency
+                                    LINEf_.Visible = true
+                                    LINEo_.Position = LINEf_.Position
+                                    LINEo_.Size = UDim2New(0, len, 0, 3)
+                                    LINEo_.Rotation = LINEf_.Rotation
+                                    LINEo_.BackgroundTransparency = 1 - showline.transparency
+                                    LINEo_.Visible = true
                                 end
-                                
+
                                 local function Render()
                                     FOVf()
                                     Linef()
@@ -5373,76 +5460,117 @@ local nigga = (function()
                                     end 
                                 end
                             
-                                local FOVOutline = DrawingClass({ "Circle", { Visible = false, Transparency = 1, Color = Color3.fromRGB(0,0,0), Thickness = 3, NumSides = 20, Radius = 10  } })
-                                local FOV = DrawingClass({ "Circle", { Visible = false, Transparency = 1, Thickness = 1, NumSides = 20, Radius = 10  } })
-                                local LINE = DrawingClass({ "Line", { Visible = false, Transparency = 1  } })
-                                
+                                local render_SA = getgenv().mj_render_Folder("FOV_SA")
+                                local sFOVf_ = InstanceNew("Frame", render_SA)
+                                sFOVf_["Name"] = [[FOVCircle]]
+                                sFOVf_["BackgroundColor3"] = Color3FromRGB(255, 255, 255)
+                                sFOVf_["BackgroundTransparency"] = 1
+                                sFOVf_["BorderSizePixel"] = 0
+                                sFOVf_["Visible"] = false
+                                local sFOVf_Corner = InstanceNew("UICorner", sFOVf_)
+                                sFOVf_Corner["CornerRadius"] = UDim.new(0.5, 0)
+                                local sFOVf_Stroke = InstanceNew("UIStroke", sFOVf_)
+                                sFOVf_Stroke["ApplyStrokeMode"] = Enum.ApplyStrokeMode.Border
+                                sFOVf_Stroke["Thickness"] = 1
+                                sFOVf_Stroke["Color"] = Color3FromRGB(255, 255, 255)
+                                local sFOVo_ = InstanceNew("Frame", render_SA)
+                                sFOVo_["Name"] = [[FOVOutline]]
+                                sFOVo_["BackgroundTransparency"] = 1
+                                sFOVo_["BorderSizePixel"] = 0
+                                sFOVo_["Visible"] = false
+                                local sFOVo_Corner = InstanceNew("UICorner", sFOVo_)
+                                sFOVo_Corner["CornerRadius"] = UDim.new(0.5, 0)
+                            local sFOVo_Stroke = InstanceNew("UIStroke", sFOVo_)
+                            sFOVo_Stroke["ApplyStrokeMode"] = Enum.ApplyStrokeMode.Border
+                            sFOVo_Stroke["Thickness"] = 2
+                            sFOVo_Stroke["Color"] = Color3FromRGB(0, 0, 0)
+                                local sLINEf_ = InstanceNew("Frame", render_SA)
+                                sLINEf_["Name"] = [[AimLine]]
+                                sLINEf_["BackgroundColor3"] = Color3FromRGB(255, 255, 255)
+                                sLINEf_["BorderSizePixel"] = 0
+                                sLINEf_["AnchorPoint"] = Vector2New(0.5, 0.5)
+                                sLINEf_["ZIndex"] = 2
+                                sLINEf_["Visible"] = false
+                                local sLINEo_ = InstanceNew("Frame", render_SA)
+                                sLINEo_["Name"] = [[AimLineOutline]]
+                                sLINEo_["BackgroundColor3"] = Color3FromRGB(0, 0, 0)
+                                sLINEo_["BorderSizePixel"] = 0
+                                sLINEo_["AnchorPoint"] = Vector2New(0.5, 0.5)
+                                sLINEo_["ZIndex"] = 1
+                                sLINEo_["Visible"] = false
+
                                 local function FOVf()
                                     if not showfov.enabled then
-                                        FOV.Visible = false
-                                        FOVOutline.Visible = false
+                                        sFOVf_.Visible = false
+                                        sFOVo_.Visible = false
                                         return
                                     end
-                                
+
                                     local fov_calculation = silentaim.fov_calculation
                                     local fieldofview = silentaim.fieldofview
+                                    local r = fieldofview
                                     if fov_calculation == "real fov" then
-                                        FOV.Radius = fieldofview / camera.FieldOfView * camera.ViewportSize.Y
-                                        FOVOutline.Radius = fieldofview / camera.FieldOfView * camera.ViewportSize.Y
-                                    elseif fov_calculation == "pixels" then
-                                        FOV.Radius = fieldofview
-                                        FOVOutline.Radius = fieldofview
+                                        r = fieldofview / camera.FieldOfView * camera.ViewportSize.Y
                                     end
-                                    
-                                    FOV.Color = showfov.color
-                                    FOV.Transparency = showfov.transparency
-                                    FOV.Position = inputService:GetMouseLocation()
-                                    FOV.Visible = true
-                            
-                                    FOVOutline.Transparency = showfov.transparency
-                                    FOVOutline.Position = inputService:GetMouseLocation()
-                                    FOVOutline.Visible = FOV.Visible and showfov.outline
+                                    r = math.min(r, 2000)
+                                    local m = inputService:GetMouseLocation()
+
+                                    sFOVf_.Size = UDim2New(0, r * 2, 0, r * 2)
+                                    sFOVf_.Position = UDim2New(0, m.X - r, 0, m.Y - r)
+                                    sFOVf_.BackgroundColor3 = showfov.color
+                                    sFOVf_Stroke.Color = showfov.color
+                                    sFOVf_Stroke.Transparency = 1 - showfov.transparency
+                                    sFOVf_.Visible = true
+
+                                    sFOVo_.Size = UDim2New(0, sFOVf_.Size.X.Offset + 4, 0, sFOVf_.Size.Y.Offset + 4)
+                                    sFOVo_.Position = UDim2New(0, sFOVf_.Position.X.Offset - 2, 0, sFOVf_.Position.Y.Offset - 2)
+                                    sFOVo_Stroke.Transparency = 1 - showfov.transparency
+                                    sFOVo_.Visible = sFOVf_.Visible and showfov.outline
                                 end
-                                
+
                                 local function Linef()
+                                    sLINEo_.Visible = false
                                     if not showline.enabled then
-                                        LINE.Visible = false
+                                        sLINEf_.Visible = false
                                         return
                                     end
-                                
+
                                     if not silentaim.enabled then
-                                        LINE.Visible = false
+                                        sLINEf_.Visible = false
                                         return
                                     end
-                                
-                                    if not silentaim.keybind then
-                                        LINE.Visible = false
-                                        return
-                                    end
-                                
+
                                     if not silentaim.character then
-                                        LINE.Visible = false
+                                        sLINEf_.Visible = false
                                         return
                                     end
-                                
+
                                     local position = silentaim:get_position()
                                     if position == nil then
-                                        LINE.Visible = false
+                                        sLINEf_.Visible = false
                                         return
                                     end
-                                
+
                                     local screenpos, onscreen = camera:WorldToViewportPoint(position)
                                     if not onscreen then
-                                        LINE.Visible = false
+                                        sLINEf_.Visible = false
                                         return
                                     end
-                                
-                                    local screencoordinates = Vector2New(screenpos.X, screenpos.Y)
-                                    LINE.From = inputService:GetMouseLocation()
-                                    LINE.To = screencoordinates
-                                    LINE.Color = showline.color
-                                    LINE.Visible = true
-                                    LINE.Transparency = showline.transparency
+
+                                    local m = inputService:GetMouseLocation()
+                                    local dx, dy = screenpos.X - m.X, screenpos.Y - m.Y
+                                    local len = math.sqrt(dx * dx + dy * dy)
+                                    sLINEf_.Position = UDim2New(0, m.X + dx / 2, 0, m.Y + dy / 2)
+                                    sLINEf_.Size = UDim2New(0, len, 0, 1)
+                                    sLINEf_.Rotation = math.deg(math.atan2(dy, dx))
+                                    sLINEf_.BackgroundColor3 = showline.color
+                                    sLINEf_.BackgroundTransparency = 1 - showline.transparency
+                                    sLINEf_.Visible = true
+                                    sLINEo_.Position = sLINEf_.Position
+                                    sLINEo_.Size = UDim2New(0, len, 0, 3)
+                                    sLINEo_.Rotation = sLINEf_.Rotation
+                                    sLINEo_.BackgroundTransparency = 1 - showline.transparency
+                                    sLINEo_.Visible = true
                                 end
                                 
                                 local function Render()
@@ -5469,22 +5597,22 @@ local nigga = (function()
                                             local mousepos = inputService:GetMouseLocation()
                                 
                                             local center_text = self.center
-                                            v.Center = center_text
-                                
+                                            v.TextXAlignment = center_text and Enum.TextXAlignment.Center or Enum.TextXAlignment.Left
+
                                             local function mousef()
                                                 local is_center = center_text and 0 or 16
-                                
+
                                                 local yMousePos = mousepos.Y + 14
                                                 local xMousePos = mousepos.X + is_center
-                                                v.Position = Vector2.new(xMousePos, yMousePos + currentPosition)
+                                                v.Position = UDim2New(0, xMousePos, 0, yMousePos + currentPosition)
                                             end
-                                
+
                                             local function centerf()
                                                 local is_center = center_text and 0 or 16
-                                
+
                                                 local yCameraVP = (camera.ViewportSize.Y / 2) + 14
                                                 local xCameraVP = (camera.ViewportSize.X / 2) + is_center
-                                                v.Position = Vector2.new(xCameraVP, yCameraVP + currentPosition)
+                                                v.Position = UDim2New(0, xCameraVP, 0, yCameraVP + currentPosition)
                                             end
                                 
                                             local action = self.position == "mouse" and mousef or self.position == "center" and centerf
@@ -5499,10 +5627,22 @@ local nigga = (function()
                                     new_indicator = function ( self, name )
                                         local options = {}
                                 
-                                        local indicator = DrawingClass({ "Text", {Size = 14, Visible = false, Transparency = 1, Text = name, Font = 2, Outline = true, Center = false } })
-                                
+                                        local folder = getgenv().mj_render_Folder("Indicator")
+                                        local indicator = InstanceNew("TextLabel", folder)
+                                        indicator["Name"] = [[IndicatorText]]
+                                        indicator["Size"] = UDim2New(0, 220, 0, 14)
+                                        indicator["BackgroundTransparency"] = 1
+                                        indicator["Font"] = Enum.Font.GothamBold
+                                        indicator["TextSize"] = 14
+                                        indicator["Text"] = name
+                                        indicator["TextColor3"] = Color3FromRGB(255, 255, 255)
+                                        indicator["TextStrokeTransparency"] = 0
+                                        indicator["TextStrokeColor3"] = Color3FromRGB(0, 0, 0)
+                                        indicator["TextXAlignment"] = Enum.TextXAlignment.Left
+                                        indicator["Visible"] = false
+
                                         options.changecolor = function (newColor)
-                                            indicator.Color = newColor
+                                            indicator.TextColor3 = newColor
                                         end
                                 
                                         options.changetext = function (newText)
@@ -5590,7 +5730,54 @@ local nigga = (function()
                             
                             do
                                 local renderbullettracers = renderTab:Section("visualize bullet tracers", "left")
-                            
+
+                                if not getgenv().mj_render_MakeLine then
+                                    getgenv().mj_render_MakeLine = function(parent, thickness, color, trans, zindex)
+                                        local f = InstanceNew("Frame", parent)
+                                        f["BorderSizePixel"] = 0
+                                        f["BackgroundColor3"] = color or Color3FromRGB(255, 255, 255)
+                                        f["AnchorPoint"] = Vector2New(0.5, 0.5)
+                                        f["Size"] = UDim2New(0, 0, 0, thickness or 2)
+                                        f["BackgroundTransparency"] = 1 - (trans or 0)
+                                        f["Visible"] = false
+                                        f["ZIndex"] = zindex or 3
+                                        local proxy = {}
+                                        local function apply()
+                                            local a = rawget(proxy, "__from")
+                                            local b = rawget(proxy, "__to")
+                                            if not a or not b then return end
+                                            local dx, dy = b.X - a.X, b.Y - a.Y
+                                            local len = math.sqrt(dx * dx + dy * dy)
+                                            f.Position = UDim2New(0, a.X + dx / 2, 0, a.Y + dy / 2)
+                                            f.Size = UDim2New(0, len, 0, rawget(proxy, "__thick") or 2)
+                                            f.Rotation = math.deg(math.atan2(dy, dx))
+                                        end
+                                        setmetatable(proxy, {
+                                            __index = function(self, k)
+                                                if k == "Remove" then
+                                                    return function() pcall(function() f:Destroy() end) end
+                                                elseif k == "Visible" then return f.Visible
+                                                elseif k == "Color" then return f.BackgroundColor3
+                                                elseif k == "Transparency" then return 1 - f.BackgroundTransparency
+                                                elseif k == "From" then return rawget(self, "__from")
+                                                elseif k == "To" then return rawget(self, "__to")
+                                                else return rawget(self, k) end
+                                            end,
+                                            __newindex = function(self, k, v)
+                                                if k == "From" then rawset(self, "__from", v) apply()
+                                                elseif k == "To" then rawset(self, "__to", v) apply()
+                                                elseif k == "Visible" then f.Visible = v
+                                                elseif k == "Transparency" then f.BackgroundTransparency = 1 - v
+                                                elseif k == "Color" then f.BackgroundColor3 = v
+                                                elseif k == "Thickness" then rawset(self, "__thick", v)
+                                                else rawset(self, k, v) end
+                                            end,
+                                        })
+                                        rawset(proxy, "__thick", thickness or 2)
+                                        return proxy
+                                    end
+                                end
+
                                 local bullet_tracers = {
                                     enabled = false,
                                     color = Color3.fromRGB(255,255,255),
@@ -5693,23 +5880,26 @@ local nigga = (function()
                                     if not character then return end
                             
                                     local shit_skeleton = {}
-                                    shit_skeleton.Head = DrawingClass({"Line", {Visible = true, Transparency = skeletontrans, Thickness = 1, ZIndex = 3, Color = skeleton_color}})
-                                    shit_skeleton.Torso = DrawingClass({"Line", {Visible = true, Transparency = skeletontrans, Thickness = 1, ZIndex = 3, Color = skeleton_color}})
-                                    shit_skeleton.Torso2 = DrawingClass({"Line", {Visible = true, Transparency = skeletontrans, Thickness = 1, ZIndex = 3, Color = skeleton_color}})
-                                    shit_skeleton.Torso3 = DrawingClass({"Line", {Visible = true, Transparency = skeletontrans, Thickness = 1, ZIndex = 3, Color = skeleton_color}})
-                                    shit_skeleton.LeftArm = DrawingClass({"Line", {Visible = true, Transparency = skeletontrans, Thickness = 1, ZIndex = 3, Color = skeleton_color}})
-                                    shit_skeleton.RightArm = DrawingClass({"Line", {Visible = true, Transparency = skeletontrans, Thickness = 1, ZIndex = 3, Color = skeleton_color}})
-                                    shit_skeleton.LeftLeg = DrawingClass({"Line", {Visible = true, Transparency = skeletontrans, Thickness = 1, ZIndex = 3, Color = skeleton_color}})
-                                    shit_skeleton.RightLeg = DrawingClass({"Line", {Visible = true, Transparency = skeletontrans, Thickness = 1, ZIndex = 3, Color = skeleton_color}})
-                            
-                                    shit_skeleton.HeadOutline = DrawingClass({"Line", {Visible = true, Transparency = skeletontrans, Thickness = 3, ZIndex = 2, Color = Color3.fromRGB(0,0,0)}})
-                                    shit_skeleton.TorsoOutline = DrawingClass({"Line", {Visible = true, Transparency = skeletontrans, Thickness = 3, ZIndex = 2, Color = Color3.fromRGB(0,0,0)}})
-                                    shit_skeleton.Torso2Outline = DrawingClass({"Line", {Visible = true, Transparency = skeletontrans, Thickness = 3, ZIndex = 2, Color = Color3.fromRGB(0,0,0)}})
-                                    shit_skeleton.Torso3Outline = DrawingClass({"Line", {Visible = true, Transparency = skeletontrans, Thickness = 3, ZIndex = 2, Color = Color3.fromRGB(0,0,0)}})
-                                    shit_skeleton.LeftArmOutline = DrawingClass({"Line", {Visible = true, Transparency = skeletontrans, Thickness = 3, ZIndex = 2, Color = Color3.fromRGB(0,0,0)}})
-                                    shit_skeleton.RightArmOutline = DrawingClass({"Line", {Visible = true, Transparency = skeletontrans, Thickness = 3, ZIndex = 2, Color = Color3.fromRGB(0,0,0)}})
-                                    shit_skeleton.LeftLegOutline = DrawingClass({"Line", {Visible = true, Transparency = skeletontrans, Thickness = 3, ZIndex = 2, Color = Color3.fromRGB(0,0,0)}})
-                                    shit_skeleton.RightLegOutline = DrawingClass({"Line", {Visible = true, Transparency = skeletontrans, Thickness = 3, ZIndex = 2, Color = Color3.fromRGB(0,0,0)}})
+                                    local skelFolder = InstanceNew("Folder", getgenv().mj_render_Folder("Skeletons"))
+                                    skelFolder["Name"] = [[Skeleton]]
+                                    local mkLine = getgenv().mj_render_MakeLine
+                                    shit_skeleton.Head = mkLine(skelFolder, 1, skeleton_color, skeletontrans, 3)
+                                    shit_skeleton.Torso = mkLine(skelFolder, 1, skeleton_color, skeletontrans, 3)
+                                    shit_skeleton.Torso2 = mkLine(skelFolder, 1, skeleton_color, skeletontrans, 3)
+                                    shit_skeleton.Torso3 = mkLine(skelFolder, 1, skeleton_color, skeletontrans, 3)
+                                    shit_skeleton.LeftArm = mkLine(skelFolder, 1, skeleton_color, skeletontrans, 3)
+                                    shit_skeleton.RightArm = mkLine(skelFolder, 1, skeleton_color, skeletontrans, 3)
+                                    shit_skeleton.LeftLeg = mkLine(skelFolder, 1, skeleton_color, skeletontrans, 3)
+                                    shit_skeleton.RightLeg = mkLine(skelFolder, 1, skeleton_color, skeletontrans, 3)
+
+                                    shit_skeleton.HeadOutline = mkLine(skelFolder, 3, Color3.fromRGB(0,0,0), skeletontrans, 2)
+                                    shit_skeleton.TorsoOutline = mkLine(skelFolder, 3, Color3.fromRGB(0,0,0), skeletontrans, 2)
+                                    shit_skeleton.Torso2Outline = mkLine(skelFolder, 3, Color3.fromRGB(0,0,0), skeletontrans, 2)
+                                    shit_skeleton.Torso3Outline = mkLine(skelFolder, 3, Color3.fromRGB(0,0,0), skeletontrans, 2)
+                                    shit_skeleton.LeftArmOutline = mkLine(skelFolder, 3, Color3.fromRGB(0,0,0), skeletontrans, 2)
+                                    shit_skeleton.RightArmOutline = mkLine(skelFolder, 3, Color3.fromRGB(0,0,0), skeletontrans, 2)
+                                    shit_skeleton.LeftLegOutline = mkLine(skelFolder, 3, Color3.fromRGB(0,0,0), skeletontrans, 2)
+                                    shit_skeleton.RightLegOutline = mkLine(skelFolder, 3, Color3.fromRGB(0,0,0), skeletontrans, 2)
                             
                                     local rigcheck = character.Humanoid.RigType == Enum.HumanoidRigType.R6
                             
@@ -5772,7 +5962,7 @@ local nigga = (function()
                                             shit_skeleton.RightArm:Remove()
                                             shit_skeleton.LeftLeg:Remove()
                                             shit_skeleton.RightLeg:Remove()
-                                
+
                                             shit_skeleton.HeadOutline:Remove()
                                             shit_skeleton.TorsoOutline:Remove()
                                             shit_skeleton.Torso2Outline:Remove()
@@ -5781,6 +5971,7 @@ local nigga = (function()
                                             shit_skeleton.RightArmOutline:Remove()
                                             shit_skeleton.LeftLegOutline:Remove()
                                             shit_skeleton.RightLegOutline:Remove()
+                                            skelFolder:Destroy()
                                         end)
                                     end
                             
@@ -5940,8 +6131,9 @@ local nigga = (function()
                                     									local Ray = workspace:Raycast(start_position, end_position, RaycastParamsObj)
                             
                                                                     if bullet_tracers.enabled then
-                                                                        local bullet_line = DrawingClass({ "Line", { Color = bullet_tracers.color, Visible = false, Transparency = bullet_tracers.transparency, Thickness = 1.3, ZIndex = 3 } })
-                                                                        local bullet_line_outline = DrawingClass({ "Line", { Color = Color3.fromRGB(0,0,0), Visible = false, Transparency = bullet_tracers.transparency, Thickness = 3, ZIndex = 2 } })
+                                                                        local tracerFolder = getgenv().mj_render_Folder("Tracers")
+                                                                        local bullet_line = getgenv().mj_render_MakeLine(tracerFolder, 1, bullet_tracers.color, bullet_tracers.transparency, 3)
+                                                                        local bullet_line_outline = getgenv().mj_render_MakeLine(tracerFolder, 3, Color3.fromRGB(0,0,0), bullet_tracers.transparency, 2)
                                                             
                                                                         gun_beam:Destroy()
                                                             
@@ -6013,7 +6205,8 @@ local nigga = (function()
                                                                         end
                             
                                                                         if hit_options.enabled then
-                                                                            local trail = DrawingClass({ "Line", { Color = hit_options.color, Visible = false, Transparency = hit_options.transparency, Thickness = 1.3, ZIndex = 3 } })
+                                                                            local hitFolder = getgenv().mj_render_Folder("HitTrails")
+                                                                            local trail = getgenv().mj_render_MakeLine(hitFolder, 1.3, hit_options.color, hit_options.transparency, 3)
                                                         
                                                                             local character = nearest_player.Character
                                                                             local old_pos = character.HumanoidRootPart.Position
@@ -6100,7 +6293,19 @@ local nigga = (function()
                                     show_aimpos.filled = bool
                                 end })
                             
-                                local aimposVisualizer = DrawingClass({ "Circle", { Visible = false, Transparency = 1, Radius = 10 } })
+                                local render_AimPos = getgenv().mj_render_Folder("AimPos")
+                                local aimposVisualizer = InstanceNew("Frame", render_AimPos)
+                                aimposVisualizer["Name"] = [[AimPosCircle]]
+                                aimposVisualizer["BackgroundColor3"] = Color3FromRGB(255, 255, 255)
+                                aimposVisualizer["BackgroundTransparency"] = 1
+                                aimposVisualizer["BorderSizePixel"] = 0
+                                aimposVisualizer["Visible"] = false
+                                local aimpos_Corner = InstanceNew("UICorner", aimposVisualizer)
+                                aimpos_Corner["CornerRadius"] = UDim.new(0.5, 0)
+                                local aimpos_Stroke = InstanceNew("UIStroke", aimposVisualizer)
+                                aimpos_Stroke["ApplyStrokeMode"] = Enum.ApplyStrokeMode.Border
+                                aimpos_Stroke["Thickness"] = 1
+                                aimpos_Stroke["Color"] = Color3FromRGB(255, 255, 255)
                             
                                 local function aimposF()
                                     if not show_aimpos.enabled then
@@ -6139,20 +6344,28 @@ local nigga = (function()
                                     end
                                 
                                     local screencoordinates = Vector2New(screenpos.X, screenpos.Y)
-                            
-                                    aimposVisualizer.Color = show_aimpos.color
+
+                                    aimposVisualizer.BackgroundColor3 = show_aimpos.color
                                     aimposVisualizer.Visible = true
-                                    aimposVisualizer.Transparency = show_aimpos.transparency
-                                    aimposVisualizer.Filled = show_aimpos.filled
-                            
+                                    aimpos_Stroke.Color = show_aimpos.color
+                                    aimpos_Stroke.Transparency = 1 - show_aimpos.transparency
+                                    if show_aimpos.filled then
+                                        aimposVisualizer.BackgroundTransparency = 0.6
+                                    else
+                                        aimposVisualizer.BackgroundTransparency = 1
+                                    end
+
+                                    local pr = 10
                                     if show_aimpos.resize then
                                         local headdotpos = camera:WorldToViewportPoint(Vector3New(mouseposValue.X, mouseposValue.Y + 0.1, mouseposValue.Z))
                                         local headdotpos_b = camera:WorldToViewportPoint(Vector3New(mouseposValue.X, mouseposValue.Y - 0.2, mouseposValue.Z))
                                         local difference = headdotpos_b.y - headdotpos.y
-                                        aimposVisualizer.Position = Vector2New(headdotpos.x, headdotpos_b.y - difference)
+                                        pr = math.max(4, math.abs(difference) / 2)
+                                        aimposVisualizer.Position = UDim2New(0, headdotpos.x - pr, 0, headdotpos_b.y - difference - pr)
                                     else
-                                        aimposVisualizer.Position = screencoordinates
-                                    end 
+                                        aimposVisualizer.Position = UDim2New(0, screencoordinates.X - pr, 0, screencoordinates.Y - pr)
+                                    end
+                                    aimposVisualizer.Size = UDim2New(0, pr * 2, 0, pr * 2)
                                 end
                             
                                 local function Render()
@@ -6194,6 +6407,10 @@ local nigga = (function()
                             
                             if game.PlaceId ~= 9825515356 then
                                 do
+                                    getgenv().mj_buybotGen = (getgenv().mj_buybotGen or 0) + 1
+                                    local buybotGen = getgenv().mj_buybotGen
+                                    local auto_lettuce = { enabled = false, token = 0, lastTP = 0 }
+
                                     local auto_buy = {
                                         enabled = false,
                                         objects = {
@@ -6205,122 +6422,140 @@ local nigga = (function()
                                     }
                                 
                                     local shops = workspace:WaitForChild("Ignored"):FindFirstChild("Shop")
-                                
-                                    function auto_buy:purchase(arguments)
-                                        local click_detector = arguments.ClickDetector
-                                        local head = arguments.Head
-                                
-                                        local Distance = (LocalPlayer.Character.HumanoidRootPart.Position - head.Position).Magnitude
-                                        if Distance < 9 then
-                                            fireclickdetector(click_detector)
+
+                                    local function buybot_AliveHRP()
+                                        local c = LocalPlayer.Character
+                                        if not c then return nil end
+                                        local hum = c:FindFirstChildOfClass("Humanoid")
+                                        if not hum or hum.Health <= 0 then return nil end
+                                        return c:FindFirstChild("HumanoidRootPart")
+                                    end
+
+                                    local buybot_WarnAt = {}
+                                    local function buybot_Warn(key, msg)
+                                        local now = os.clock()
+                                        if (buybot_WarnAt[key] or 0) + 10 > now then return end
+                                        buybot_WarnAt[key] = now
+                                        warn("[Buybot] " .. msg)
+                                    end
+
+                                    local function teleport_and_settle(target_cframe, timeout, stopFn)
+                                        local char = LocalPlayer.Character
+                                        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                                        if not hrp then return false end
+                                        local t0 = os.clock()
+                                        timeout = timeout or 1.0
+                                        repeat
+                                            if stopFn and stopFn() then return false end
+                                            char = LocalPlayer.Character
+                                            hrp = char and char:FindFirstChild("HumanoidRootPart")
+                                            if not hrp then return false end
+                                            hrp.CFrame = target_cframe
+                                            task.wait(0.05)
+                                            char = LocalPlayer.Character
+                                            hrp = char and char:FindFirstChild("HumanoidRootPart")
+                                            if not hrp then return false end
+                                            if (hrp.Position - target_cframe.Position).Magnitude < 3 then
+                                                task.wait(0.15)
+                                                return true
+                                            end
+                                        until os.clock() - t0 > timeout
+                                        return false
+                                    end
+
+                                    local ammoKeys = {
+                                        "[Double-Barrel SG Ammo]", "[Revolver Ammo]", "[Rifle Ammo]",
+                                        "[Shotgun Ammo]", "[TacticalShotgun Ammo]", "[Silencer Ammo]",
+                                        "[SilencerAR Ammo]", "[LMG Ammo]", "[Glock Ammo]", "[SMG Ammo]",
+                                        "[AK47 Ammo]", "[AR Ammo]", "[AUG Ammo]", "[DrumGun Ammo]", "[P90 Ammo]",
+                                    }
+
+                                    local function buybot_GoBuy(head, cd, clicks, pace, stopFn, stay)
+                                        local hrp = buybot_AliveHRP()
+                                        if not hrp then return false end
+                                        if (hrp.Position - head.Position).Magnitude >= 9 then
+                                            local home = hrp.CFrame
+                                            if not teleport_and_settle(head.CFrame + Vector3New(0, 5, 0), 1.0, stopFn) then
+                                                buybot_Warn("settle", "Teleport did not stick (server correction?). Skipping purchase.")
+                                                return false
+                                            end
+                                            for i = 1, clicks do
+                                                if stopFn and stopFn() then break end
+                                                pcall(fireclickdetector, cd)
+                                                task.wait(pace or 0.12)
+                                            end
+                                            if stopFn and stopFn() then return false end
+                                            if not stay then
+                                                local hrpBack = buybot_AliveHRP()
+                                                if hrpBack then pcall(function() hrpBack.CFrame = home end) end
+                                            end
+                                        else
+                                            for i = 1, clicks do
+                                                if stopFn and stopFn() then break end
+                                                pcall(fireclickdetector, cd)
+                                                task.wait(pace or 0.12)
+                                            end
                                         end
+                                        return true
                                     end
-                                
-                                    function auto_buy:gun(child, string_name, dropdown_value)
-                                        if not table.find(auto_buy.objects.guns, dropdown_value) then return end
-                                        if not child.Name:find(string_name) then return end
-                                        pcall(function ()
-                                            self:purchase({ ClickDetector = child.ClickDetector, Head = child.Head })
-                                        end)
-                                    end
-                                
-                                    function auto_buy:equipment(child, string_name, dropdown_value)
-                                        if not table.find(auto_buy.objects.equipment, dropdown_value) then return end
-                                        if not child.Name:find(string_name) then return end
-                                        pcall(function ()
-                                            self:purchase({ ClickDetector = child.ClickDetector, Head = child.Head })
-                                        end)
-                                    end
-                                
-                                    function auto_buy:food(child, string_name, dropdown_value)
-                                        if not table.find(auto_buy.objects.food, dropdown_value) then return end
-                                        if not child.Name:find(string_name) then return end
-                                        pcall(function ()
-                                            self:purchase({ ClickDetector = child.ClickDetector, Head = child.Head })
-                                        end)
-                                    end
-                                
-                                    function auto_buy:has_armor()
-                                        return LocalPlayer.Character.BodyEffects.Armor.Value > 0 and true or false
-                                    end
-                                
-                                    local shop_objs = shops:GetChildren()
-                                
+
                                     function auto_buy:start()
-                                        if not da_hood.functions:is_localplayer_alive() then return end
+                                        local hrp = buybot_AliveHRP()
+                                        if not hrp then return end
                                         if not auto_buy.enabled then return end
-                                
-                                        if not auto_buy.state then
-                                            auto_buy.state = true
-                                
-                                            for _, v in ipairs(shop_objs) do
-                                                if v:FindFirstChild("Head") then
-                                                    do
-                                                        auto_buy:gun(v, "Double", "[Double-Barrel SG]")
-                                                        auto_buy:gun(v, "Revolver", "[Revolver]")
-                                                        auto_buy:gun(v, "Rifle", "[Rifle]")
-                                                        auto_buy:gun(v, "[Shotgun]", "[Shotgun]")
-                                                        auto_buy:gun(v, "TacticalShotgun", "[TacticalShotgun]")
-                                                        auto_buy:gun(v, "[Silencer]", "[Silencer]")
-                                                        auto_buy:gun(v, "SilencerAR", "[SilencerAR]")
-                                                        auto_buy:gun(v, "LMG", "[LMG]")
-                                                        auto_buy:gun(v, "Glock", "[Glock]")
-                                                        auto_buy:gun(v, "SMG", "[SMG]")
-                                                        auto_buy:gun(v, "AK47", "[AK47]")
-                                                        auto_buy:gun(v, "AR", "[AR]")
-                                                        auto_buy:gun(v, "AUG", "[AUG]")
-                                                        auto_buy:gun(v, "DrumGun", "[DrumGun]")
-                                                        auto_buy:gun(v, "P90", "[P90]")
+
+                                        if auto_buy.state then return end
+                                        auto_buy.state = true
+
+                                        pcall(function()
+                                            local shopsNow = workspace:FindFirstChild("Ignored")
+                                            shopsNow = shopsNow and shopsNow:FindFirstChild("Shop")
+                                            if not shopsNow then buybot_Warn("noshop", "Shop folder not found.") return end
+                                            local home = hrp.CFrame
+                                            for _, v in ipairs(shopsNow:GetChildren()) do
+                                                if not auto_buy.enabled then break end
+                                                local head = v:FindFirstChild("Head")
+                                                local cd = v:FindFirstChild("ClickDetector")
+                                                if not cd and head then cd = head:FindFirstChildOfClass("ClickDetector") end
+                                                if head and cd then
+                                                    local fires = 0
+                                                    for _, g in ipairs(auto_buy.objects.guns) do
+                                                        if v.Name:find(g, 1, true) then fires = fires + 1 end
                                                     end
-                                
-                                                    do
-                                                        if not auto_buy:has_armor() then
-                                                            auto_buy:equipment(v, "Armor", "[Armor]")
+                                                    for _, f in ipairs(auto_buy.objects.food) do
+                                                        if not (auto_lettuce.enabled and f:find("Lettuce", 1, true)) then
+                                                            if v.Name:find(f, 1, true) then fires = fires + 1 end
                                                         end
                                                     end
-                                
-                                                    do
-                                                        auto_buy:food(v, "Chicken", "[Chicken]")
-                                                        auto_buy:food(v, "Pizza", "[Pizza]")
-                                                        auto_buy:food(v, "Cranberry", "[Cranberry]")
+                                                    if fires > 0 then
+                                                        if buybot_GoBuy(head, cd, fires, 0.12, function() return not auto_buy.enabled end) then
+                                                            task.wait(0.5)
+                                                        end
                                                     end
                                                 end
                                             end
-                                
-                                            auto_buy.state = false
-                                        end
+                                        end)
+
+                                        auto_buy.state = false
                                     end
-                                
-                                    local run_auto_buy = false
-                                
-                                    local auto_buy_func = function()
-                                        while run_auto_buy do
-                                            task.wait(0.1)
-                                
-                                            auto_buy:start()
-                                        end
-                                    end
-                                
+
                                     local gun_list = { "[Double-Barrel SG]", "[Revolver]", "[Rifle]", "[TacticalShotgun]", "[Shotgun]",
                                         "[Silencer]", "[SilencerAR]", "[LMG]", "[Glock]", "[SMG]", "[AK47]", "[AR]", "[AUG]", "[DrumGun]", "[P90]" }
-                                
-                                    local equipment_list = { "[Armor]" }
-                                
+
                                     local food_list = { "[Chicken]", "[Pizza]", "[Cranberry]" }
-                                
+
                                     local buy_bot = miscTab:Section("buybot", "left")
-                                
+
                                     buy_bot:Toggle({
                                         title = "enabled",
                                         default = false,
                                         callback = function(bool)
                                             auto_buy.enabled = bool
-                                
+
                                             if bool then
-                                                run_auto_buy = true
-                                                coroutine.wrap(auto_buy_func)()
-                                            else
-                                                run_auto_buy = false
+                                                task.spawn(function()
+                                                    auto_buy:start()
+                                                end)
                                             end
                                         end
                                     })
@@ -6336,22 +6571,225 @@ local nigga = (function()
                                     })
                                 
                                     buy_bot:Dropdown({
-                                        title = "equipment",
-                                        values = equipment_list,
-                                        default = "[Armor]",
-                                        multi = true,
-                                        callback = function(value)
-                                            auto_buy.objects.equipment = value
-                                        end
-                                    })
-                                
-                                    buy_bot:Dropdown({
                                         title = "food",
                                         values = food_list,
                                         default = "[Chicken]",
                                         multi = true,
                                         callback = function(value)
                                             auto_buy.objects.food = value
+                                        end
+                                    })
+
+                                    buy_bot:Label("Auto Buy Ammo")
+
+                                    local autoAmmo = { enabled = false, token = 0, key = "[Revolver Ammo]" }
+                                    buy_bot:Dropdown({
+                                        title = "Ammo Type",
+                                        values = ammoKeys,
+                                        default = "[Revolver Ammo]",
+                                        multi = false,
+                                        callback = function(value)
+                                            autoAmmo.key = value
+                                        end
+                                    })
+
+                                    local autoAmmoT = nil
+                                    local autoAmmoStatus = buy_bot:Label("AutoAmmo: OFF")
+                                    autoAmmoT = buy_bot:Toggle({
+                                        title = "Auto Buy Ammo",
+                                        default = false,
+                                        callback = function(bool)
+                                            autoAmmo.enabled = bool
+                                            if not bool then
+                                                autoAmmo.token = autoAmmo.token + 1
+                                                autoAmmoStatus:ChangeText("AutoAmmo: OFF")
+                                                return
+                                            end
+                                            autoAmmo.token = autoAmmo.token + 1
+                                            local my = autoAmmo.token
+                                            local homeAtStart = nil
+                                            local hrp0 = buybot_AliveHRP()
+                                            if hrp0 then homeAtStart = hrp0.CFrame end
+                                            task.spawn(function()
+                                                while autoAmmo.enabled and my == autoAmmo.token and buybotGen == getgenv().mj_buybotGen do
+                                                    local key = autoAmmo.key
+                                                    local function autoAmmoStopped()
+                                                        return not autoAmmo.enabled or my ~= autoAmmo.token
+                                                    end
+                                                    autoAmmoStatus:ChangeText("AutoAmmo: scanning…")
+                                                    local shopsNow = workspace:FindFirstChild("Ignored")
+                                                    shopsNow = shopsNow and shopsNow:FindFirstChild("Shop")
+                                                    if not shopsNow then
+                                                        buybot_Warn("noshop", "Shop folder not found.")
+                                                        autoAmmoStatus:ChangeText("AutoAmmo: no shop folder")
+                                                    else
+                                                        local target, targetHead, targetCd = nil, nil, nil
+                                                        for _, v in ipairs(shopsNow:GetChildren()) do
+                                                            if autoAmmoStopped() then break end
+                                                            if v.Name:find(key, 1, true) then
+                                                                local head = v:FindFirstChild("Head")
+                                                                local cd = v:FindFirstChild("ClickDetector")
+                                                                if not cd and head then cd = head:FindFirstChildOfClass("ClickDetector") end
+                                                                if head and cd then
+                                                                    target, targetHead, targetCd = v, head, cd
+                                                                    break
+                                                                else
+                                                                    buybot_Warn("nohead", "Ammo shop missing Head/ClickDetector: " .. tostring(v.Name))
+                                                                end
+                                                            end
+                                                        end
+                                                        if target == nil then
+                                                            if not autoAmmoStopped() then
+                                                                autoAmmoStatus:ChangeText("AutoAmmo: no match: " .. tostring(key))
+                                                                buybot_Warn("nomatch", "No shop matches ammo: " .. tostring(key))
+                                                            end
+                                                        else
+                                                            autoAmmoStatus:ChangeText("AutoAmmo: moving to " .. tostring(target.Name))
+                                                            local ok = buybot_GoBuy(targetHead, targetCd, 1, 0.05, autoAmmoStopped, true)
+                                                            if autoAmmoStopped() then break end
+                                                            if ok then
+                                                                autoAmmoStatus:ChangeText("AutoAmmo: buying " .. tostring(key))
+                                                            else
+                                                                autoAmmoStatus:ChangeText("AutoAmmo: settle failed, retrying")
+                                                            end
+                                                        end
+                                                    end
+                                                    task.wait(0.5)
+                                                end
+                                                if not autoAmmo.enabled then
+                                                    local hrpBack = buybot_AliveHRP()
+                                                    if hrpBack and homeAtStart then pcall(function() hrpBack.CFrame = homeAtStart end) end
+                                                    autoAmmoStatus:ChangeText("AutoAmmo: OFF")
+                                                else
+                                                    autoAmmoStatus:ChangeText("AutoAmmo: OFF (superseded)")
+                                                end
+                                            end)
+                                        end
+                                    })
+
+                                    buy_bot:Button({ title = "Buy Armor", callback = function()
+                                        task.spawn(function()
+                                            local shopsNow = workspace:FindFirstChild("Ignored")
+                                            shopsNow = shopsNow and shopsNow:FindFirstChild("Shop")
+                                            if not shopsNow then warn("[Buybot] Shop not found.") return end
+                                            for _, v in ipairs(shopsNow:GetChildren()) do
+                                                if v.Name:find("High-Medium Armor", 1, true) and v.Name:find("$3377", 1, true) then
+                                                    local head = v:FindFirstChild("Head")
+                                                    local cd = v:FindFirstChild("ClickDetector")
+                                                    if not cd and head then cd = head:FindFirstChildOfClass("ClickDetector") end
+                                                    if head and cd then
+                                                        buybot_GoBuy(head, cd, 1, 0.05)
+                                                    else
+                                                        warn("[Buybot] Armor shop missing Head/ClickDetector.")
+                                                    end
+                                                    return
+                                                end
+                                            end
+                                            warn("[Buybot] $3377 High-Medium Armor shop not found.")
+                                        end)
+                                    end })
+
+                                    auto_lettuce.token = 0
+
+                                    local function auto_lettuce_FindTool()
+                                        local bp = LocalPlayer:FindFirstChild("Backpack")
+                                        if bp then
+                                            for _, t in ipairs(bp:GetChildren()) do
+                                                if t:IsA("Tool") and t.Name:find("Lettuce", 1, true) then
+                                                    return t, true
+                                                end
+                                            end
+                                        end
+                                        local ch = LocalPlayer.Character
+                                        if ch then
+                                            for _, t in ipairs(ch:GetChildren()) do
+                                                if t:IsA("Tool") and t.Name:find("Lettuce", 1, true) then
+                                                    return t, false
+                                                end
+                                            end
+                                        end
+                                        return nil, nil
+                                    end
+
+                                    local function auto_lettuce_Cycle(token)
+                                        if not auto_lettuce.enabled or token ~= auto_lettuce.token then return end
+                                        local shopsNow = workspace:FindFirstChild("Ignored")
+                                        shopsNow = shopsNow and shopsNow:FindFirstChild("Shop")
+                                        if not shopsNow then return end
+                                        local thead, tcd = nil, nil
+                                        for _, v in ipairs(shopsNow:GetChildren()) do
+                                            if v.Name:find("Lettuce", 1, true) then
+                                                local h = v:FindFirstChild("Head")
+                                                local cd = v:FindFirstChild("ClickDetector")
+                                                if not cd and h then cd = h:FindFirstChildOfClass("ClickDetector") end
+                                                if h and cd then thead, tcd = h, cd break end
+                                            end
+                                        end
+                                        if not thead then return end
+                                        local hrp = buybot_AliveHRP()
+                                        if not hrp then return end
+                                        if (hrp.Position - thead.Position).Magnitude > 15 then
+                                            local now = os.clock()
+                                            if now - (auto_lettuce.lastTP or 0) < 1 then return end
+                                            auto_lettuce.lastTP = now
+                                            hrp.CFrame = thead.CFrame + Vector3New(0, 5, 0)
+                                            task.wait(0.3)
+                                        end
+                                        if not auto_lettuce.enabled or token ~= auto_lettuce.token then return end
+                                        pcall(fireclickdetector, tcd)
+                                        local tool = nil
+                                        local inBackpack = nil
+                                        for i = 1, 30 do
+                                            if not auto_lettuce.enabled or token ~= auto_lettuce.token then return end
+                                            tool, inBackpack = auto_lettuce_FindTool()
+                                            if tool then break end
+                                            task.wait(0.1)
+                                        end
+                                        if not tool then return end
+                                        if inBackpack then
+                                            local c = LocalPlayer.Character
+                                            local hum = c and c:FindFirstChildOfClass("Humanoid")
+                                            if hum then pcall(function() hum:EquipTool(tool) end) end
+                                            task.wait(0.2)
+                                        end
+                                        if not auto_lettuce.enabled or token ~= auto_lettuce.token then return end
+                                        pcall(function() tool:Activate() end)
+                                        task.wait(0.25)
+                                        pcall(function() tool:Activate() end)
+                                        pcall(function()
+                                            if inputManager and inputManager.SendMouseButtonEvent then
+                                                inputManager:SendMouseButtonEvent(0, 0, 0, true, game, 1)
+                                                task.wait(0.05)
+                                                inputManager:SendMouseButtonEvent(0, 0, 0, false, game, 1)
+                                            end
+                                        end)
+                                    end
+
+                                    local function auto_lettuce_Start()
+                                        auto_lettuce.token = auto_lettuce.token + 1
+                                        local my = auto_lettuce.token
+                                        task.spawn(function()
+                                            while auto_lettuce.enabled and my == auto_lettuce.token and buybotGen == getgenv().mj_buybotGen do
+                                                auto_lettuce_Cycle(my)
+                                                task.wait(1)
+                                            end
+                                        end)
+                                    end
+
+                                    local function auto_lettuce_Stop()
+                                        auto_lettuce.token = auto_lettuce.token + 1
+                                    end
+
+                                    buy_bot:Toggle({
+                                        title = "Auto Lettuce",
+                                        default = false,
+                                        callback = function(bool)
+                                            auto_lettuce.enabled = bool
+                                            if bool then
+                                                auto_lettuce_Start()
+                                            else
+                                                auto_lettuce_Stop()
+                                            end
                                         end
                                     })
                                 end
@@ -6779,6 +7217,28 @@ local nigga = (function()
                                     end
                                 end
                             end })
+                            local orbitStatus = advanced:Label("Orbit: None")
+                            advanced:Button({ title = "orbit player", callback = function ()
+                                local api = getgenv().mj_orbit_API
+                                if not api then orbitStatus:ChangeText("Orbit: Unavailable") return end
+                                local current_player = playerlist:GetCurrentPlayer()
+                                if not current_player then orbitStatus:ChangeText("Orbit: No Player Selected") return end
+                                if api.state() and api.state().Name == current_player then
+                                    api.unlock()
+                                    orbitStatus:ChangeText("Orbit: None")
+                                else
+                                    local player = playerService[current_player]
+                                    if player and da_hood.functions:is_alive(player) then
+                                        if api.lock(player) then
+                                            orbitStatus:ChangeText("Orbit: " .. current_player)
+                                        else
+                                            orbitStatus:ChangeText("Orbit: Lock Failed")
+                                        end
+                                    else
+                                        orbitStatus:ChangeText("Orbit: Player Not Alive")
+                                    end
+                                end
+                            end })
                             
                             local function update_thing()
                                 local current_player = playerlist:GetCurrentPlayer()
@@ -6813,20 +7273,22 @@ local nigga = (function()
                                 file = "",
                                 config_name = ""
                             }
+                            local function config_Basename(path)
+                                local name = path:gsub(".*[/\\]", "")
+                                name = name:gsub("%.[Tt][Xx][Tt]$", "")
+                                return name
+                            end
                             function config:get_list()
                                 local config_list = {}
-                            
-                                if #listfiles("joker/configs/da_hood") > 0 then
-                                    for i, v in next, listfiles("joker/configs/da_hood") do
-                                        local ext = '.'..v:split('.')[#v:split('.')];
-                                        if ext == '.txt' then
-                                            table.insert(config_list, v:split('\\')[#v:split('\\')]:sub(1,-#ext-1))
-                                        end
-                                    end
-                                else
-                                    config_list = {}
+                                local ok, files = pcall(listfiles, "joker/configs/da_hood")
+                                if not ok or typeof(files) ~= "table" then
+                                    return config_list
                                 end
-                            
+                                for i, v in next, files do
+                                    if typeof(v) == "string" and v:lower():sub(-4) == ".txt" then
+                                        table.insert(config_list, config_Basename(v))
+                                    end
+                                end
                                 return config_list
                             end
                             
@@ -6845,38 +7307,55 @@ local nigga = (function()
                             local configs_list, funcs = profiles:Dropdown({ title = "configs", values = config:get_list(), default = "--", multi = false, callback = function (value)
                                 config.file = value
                             end })
+
+                            local function config_RefreshKeep()
+                                local keep = config.file
+                                funcs:Refresh(config:get_list())
+                                if keep ~= nil and keep ~= "" and keep ~= "--" then
+                                    if table.find(config:get_list(), keep) then
+                                        funcs:Set(keep)
+                                    end
+                                end
+                            end
                             
                             profiles:Button({ title = "load config", callback = function ()
-                                if config.file == nil then return end
-                                if not isfile(config.path .. config.file .. ".txt") then return end
+                                if config.file == nil or config.file == "" or config.file == "--" then warn("[Config] Select a config first.") return end
+                                local full = config.path .. config.file .. ".txt"
+                                if not isfile(full) then warn("[Config] File not found: " .. full) return end
+                                local okRead, config_to_load = pcall(readfile, full)
+                                if not okRead then warn("[Config] Could not read file.") return end
                             
                                 loading_config = true
-                                local config_to_load = readfile(config.path .. config.file .. ".txt")
                                 UserInterface:LoadConfig(config_to_load)
-                                funcs:Refresh(config:get_list())
+                                config_RefreshKeep()
                                 loading_config = false
                             end })
                             
                             profiles:Button({ title = "save config", callback = function ()
                                 if config.config_name ~= "" then
-                                    writefile(config.path .. config.config_name .. ".txt", UserInterface:GetConfig())
-                                    funcs:Refresh(config:get_list())
+                                    local full = config.path .. config.config_name .. ".txt"
+                                    local okEnc, data = pcall(UserInterface.GetConfig, UserInterface)
+                                    if not okEnc then warn("[Config] Could not encode config.") return end
+                                    local okW = pcall(writefile, full, data)
+                                    if not okW then warn("[Config] Save failed.") return end
+                                    if not isfile(full) then warn("[Config] Save verify failed: " .. full) return end
+                                    config_RefreshKeep()
                                 end
                             end })
                             
                             profiles:Button({ title = "delete config", callback = function ()
-                                if config.file ~= nil then
-                                    local config_to_delete = config.path .. config.file .. ".txt"
-                                    delfile(config_to_delete)
-                                    funcs:Refresh(config:get_list())
+                                if config.file ~= nil and config.file ~= "" and config.file ~= "--" then
+                                    pcall(delfile, config.path .. config.file .. ".txt")
+                                    config_RefreshKeep()
                                 end
                             end })
                             
                             profiles:Button({ title = "refresh list", callback = function ()
-                                funcs:Refresh(config:get_list())
+                                config_RefreshKeep()
                             end })
 
                             profiles:Button({ title = "unload", callback = function ()
+                                pcall(function() getgenv().mj_buybotGen = (getgenv().mj_buybotGen or 0) + 1 end)
                                 pcall(function() if getgenv().mj_movement_Cleanup then getgenv().mj_movement_Cleanup() end end)
                                 pcall(function()
                                     for _, conns in pairs({Loops.Heartbeat, Loops.RenderStepped}) do
@@ -6887,6 +7366,10 @@ local nigga = (function()
                                     end
                                 end)
                                 pcall(function() if getgenv().mj_visualESP_Clear then getgenv().mj_visualESP_Clear() end end)
+                                pcall(function()
+                                    if getgenv().mj_render_Gui then getgenv().mj_render_Gui:Destroy() end
+                                    getgenv().mj_render_Gui = nil
+                                end)
                                 pcall(function()
                                     local DC = SYC and SYC.Modules and SYC.Modules.DrawingClass
                                     if DC and DC.Objects then
@@ -6940,34 +7423,7 @@ local nigga = (function()
                                 UI.KeybindListo.Visible = bool
                             end })
                             
-                            local stream_section = settingsTab:Section("stream", "right")
                             local vsync_section = settingsTab:Section("vsync", "right")
-
-                            getgenv().streamProof = false
-                            stream_section:Toggle({
-                                title = "stream proof mode",
-                                default = false,
-                                callback = function(bool)
-                                    getgenv().streamProof = bool
-                                    if bool then
-                                        if UI["1"] then UI["1"].Enabled = false end
-                                        if UI.KeybindListo then UI.KeybindListo.Visible = false end
-                                        for _, child in pairs(coreguiService:GetChildren()) do
-                                            if child.Name == "Watermark" then
-                                                child.Visible = false
-                                            end
-                                        end
-                                    else
-                                        if UI["1"] then UI["1"].Enabled = true end
-                                        if UI.KeybindListo then UI.KeybindListo.Visible = true end
-                                        for _, child in pairs(coreguiService:GetChildren()) do
-                                            if child.Name == "Watermark" then
-                                                child.Visible = true
-                                            end
-                                        end
-                                    end
-                                end
-                            })
 
                             vsync_section:Toggle({
                                 title = "vsync",
@@ -6994,7 +7450,55 @@ local nigga = (function()
                                 return c:FindFirstChild("HumanoidRootPart")
                             end
 
-                            local rageOrbit = { Enabled = false, Master = false, Target = nil, Method = "Circular", Radius = 14, Speed = 40, Angle = 0, RandTimer = 0, RandOffset = Vector3New(0, 0, 0) }
+                            local rageOrbit = { Enabled = false, Master = false, Override = false, Target = nil, Method = "Circular", Radius = 14, Speed = 40, Angle = 0, RandTimer = 0, RandOffset = Vector3New(0, 0, 0) }
+
+                            -- ORBIT BAN RISK (read this on a fresh account): orbit teleports your
+                            -- character every tick. The server watches real positions and other
+                            -- players watch you spin. This is the most likely feature to get an
+                            -- account banned. The Show Orbit toggle below is VISUALS ONLY, not safety.
+                            rage_main:Label("WARNING: Orbit = teleports.")
+                            rage_main:Label("Server sees it. Top ban risk.")
+                            -- rage_main:Label("Show Orbit = visuals, NOT safety.")
+
+                            local showOrbit = { Enabled = false }
+                            local orbitFolder = getgenv().mj_render_Folder("Orbit")
+                            local orbitRing = InstanceNew("Frame", orbitFolder)
+                            orbitRing["Name"] = [[OrbitRing]]
+                            orbitRing["BackgroundTransparency"] = 1
+                            orbitRing["BorderSizePixel"] = 0
+                            orbitRing["Visible"] = false
+                            local orbitRing_Corner = InstanceNew("UICorner", orbitRing)
+                            orbitRing_Corner["CornerRadius"] = UDim.new(0.5, 0)
+                            local orbitRing_Stroke = InstanceNew("UIStroke", orbitRing)
+                            orbitRing_Stroke["ApplyStrokeMode"] = Enum.ApplyStrokeMode.Border
+                            orbitRing_Stroke["Thickness"] = 2
+                            orbitRing_Stroke["Color"] = Color3FromRGB(255, 255, 255)
+                            local orbitLine = getgenv().mj_render_MakeLine(orbitFolder, 2, Color3FromRGB(255, 255, 255), 1, 3)
+
+                            local function rageOrbit_HideVisuals()
+                                orbitRing.Visible = false
+                                orbitLine.Visible = false
+                            end
+
+                            local function rageOrbit_UpdateVisuals(troot)
+                                local cam = workspace.CurrentCamera
+                                if not showOrbit.Enabled or not troot or not cam then rageOrbit_HideVisuals() return end
+                                local r = rageOrbit.Radius
+                                local c = troot.Position
+                                local a, aOn = cam:WorldToViewportPoint(c + Vector3New(r, 0, 0))
+                                local b, bOn = cam:WorldToViewportPoint(c - Vector3New(r, 0, 0))
+                                if not (aOn and bOn and a.Z > 0 and b.Z > 0) then rageOrbit_HideVisuals() return end
+                                local dia = math.abs(b.X - a.X)
+                                if dia < 4 or dia > 3000 then rageOrbit_HideVisuals() return end
+                                local cx, cy = (a.X + b.X) / 2, (a.Y + b.Y) / 2
+                                orbitRing.Position = UDim2New(0, cx - dia / 2, 0, cy - dia / 2)
+                                orbitRing.Size = UDim2New(0, dia, 0, dia)
+                                orbitRing.Visible = true
+                                local vs = cam.ViewportSize
+                                orbitLine.From = Vector2New(vs.X / 2, vs.Y)
+                                orbitLine.To = Vector2New(cx, cy)
+                                orbitLine.Visible = true
+                            end
 
                             local orbitLabel = rage_main:Label("Target: None")
 
@@ -7002,17 +7506,24 @@ local nigga = (function()
                                 local cam = workspace.CurrentCamera
                                 if not cam then return nil end
                                 local mouse = LocalPlayer:GetMouse()
-                                local best, bestD = nil, 600
+                                local mx, my = mouse.X, mouse.Y
+                                local best, bestD = nil, 350
                                 for _, p in ipairs(playerService:GetPlayers()) do
                                     if p ~= LocalPlayer and p.Character then
                                         local hum = p.Character:FindFirstChildOfClass("Humanoid")
-                                        local root = hum and (hum.RootPart or p.Character:FindFirstChild("HumanoidRootPart"))
-                                        if hum and hum.Health > 0 and root then
-                                            local pos, on = cam:WorldToViewportPoint(root.Position)
-                                            if on and pos.Z > 0 then
-                                                local d = (Vector2New(mouse.X, mouse.Y) - Vector2New(pos.X, pos.Y)).Magnitude
-                                                if d < bestD then best, bestD = p, d end
+                                        if hum and hum.Health > 0 then
+                                            local nearest = nil
+                                            for _, partName in ipairs({"Head", "HumanoidRootPart", "UpperTorso", "Torso"}) do
+                                                local part = p.Character:FindFirstChild(partName)
+                                                if part then
+                                                    local pos, on = cam:WorldToViewportPoint(part.Position)
+                                                    if on and pos.Z > 0 then
+                                                        local d = (Vector2New(mx, my) - Vector2New(pos.X, pos.Y)).Magnitude
+                                                        if nearest == nil or d < nearest then nearest = d end
+                                                    end
+                                                end
                                             end
+                                            if nearest ~= nil and nearest < bestD then best, bestD = p, nearest end
                                         end
                                     end
                                 end
@@ -7032,7 +7543,13 @@ local nigga = (function()
                                 end
                             end
 
-                            local rageSA_Save = { armed = false, enabled = false, keybind = false, sync = false, loop = false }
+                            local rageSA_Save = { armed = false, enabled = false, keybind = false, sync = false, loop = false, lock_target = false, lock_target_state = false, character = nil }
+
+                            local function rageSA_ValidModel(m)
+                                if not m or not m.Parent then return false end
+                                local h = m:FindFirstChildOfClass("Humanoid")
+                                return h ~= nil and h.Health > 0
+                            end
 
                             local function rageSA_Arm()
                                 if not silentaim then return end
@@ -7041,6 +7558,9 @@ local nigga = (function()
                                 rageSA_Save.keybind = silentaim.keybind
                                 rageSA_Save.sync = silentaim.sync_with_aim_assist
                                 rageSA_Save.loop = Loops.RenderStepped["silentaim"] ~= nil
+                                rageSA_Save.lock_target = silentaim.lock_target
+                                rageSA_Save.lock_target_state = silentaim.lock_target_state
+                                rageSA_Save.character = silentaim.character
                                 silentaim.enabled = true
                                 silentaim.keybind = true
                                 silentaim.sync_with_aim_assist = false
@@ -7054,6 +7574,15 @@ local nigga = (function()
                                 silentaim.enabled = rageSA_Save.enabled
                                 silentaim.keybind = rageSA_Save.keybind
                                 silentaim.sync_with_aim_assist = rageSA_Save.sync
+                                if rageSA_Save.lock_target and rageSA_ValidModel(rageSA_Save.character) then
+                                    silentaim.character = rageSA_Save.character
+                                    silentaim.lock_target = true
+                                    silentaim.lock_target_state = rageSA_Save.lock_target_state
+                                else
+                                    silentaim.character = nil
+                                    silentaim.lock_target = false
+                                    silentaim.lock_target_state = false
+                                end
                                 if not rageSA_Save.loop then
                                     Loops:RemoveFromHeartbeat("silentaim")
                                 end
@@ -7061,17 +7590,18 @@ local nigga = (function()
                             end
 
                             local function rageOrbit_Render(dt)
-                                if not rageOrbit.Enabled then return end
+                                if not rageOrbit.Enabled then rageOrbit_HideVisuals() return end
                                 local t = rageOrbit.Target
                                 local tchar = t and t.Parent and t.Character or nil
                                 local thum = tchar and tchar:FindFirstChildOfClass("Humanoid") or nil
                                 local troot = thum and (thum.RootPart or tchar:FindFirstChild("HumanoidRootPart")) or nil
                                 if not troot or thum.Health <= 0 then
                                     if t then rageOrbit.Target = nil rageOrbit_PinSilent(nil) rageSA_Restore() orbitLabel:ChangeText("Target: None") end
+                                    rageOrbit_HideVisuals()
                                     return
                                 end
                                 local me = rage_MyRoot()
-                                if not me then return end
+                                if not me then rageOrbit_HideVisuals() return end
                                 local r, s, m = rageOrbit.Radius, rageOrbit.Speed, rageOrbit.Method
                                 local pos = troot.Position
                                 local n
@@ -7093,10 +7623,11 @@ local nigga = (function()
                                 local look = Vector3New(pos.X, n.Y, pos.Z)
                                 if (look - n).Magnitude > 0.1 then me.CFrame = CFrame.new(n, look) else me.CFrame = CFrame.new(n) end
                                 me.AssemblyLinearVelocity = Vector3.zero
+                                rageOrbit_UpdateVisuals(troot)
                             end
 
                             local function rageOrbit_Apply()
-                                local on = rageOrbit.Master and rageOrbit.Target ~= nil
+                                local on = (rageOrbit.Master or rageOrbit.Override) and rageOrbit.Target ~= nil
                                 if on == rageOrbit.Enabled then
                                     if not on and not rageOrbit.Target then orbitLabel:ChangeText("Target: None") end
                                     return
@@ -7106,6 +7637,7 @@ local nigga = (function()
                                     Loops:AddToHeartbeat("mj_orbit", rageOrbit_Render)
                                 else
                                     Loops:RemoveFromHeartbeat("mj_orbit")
+                                    rageOrbit_HideVisuals()
                                     local me = rage_MyRoot()
                                     if me then me.AssemblyLinearVelocity = Vector3.zero end
                                 end
@@ -7116,39 +7648,67 @@ local nigga = (function()
                                 rageOrbit_Apply()
                             end
 
+                            local function rageOrbit_LockPlayer(p)
+                                if not p then
+                                    orbitLabel:ChangeText("Target: None Found")
+                                    return false
+                                end
+                                local m = p.Character
+                                local h = m and m:FindFirstChildOfClass("Humanoid") or nil
+                                if not (m and h and h.Health > 0) then
+                                    orbitLabel:ChangeText("Target: None Found")
+                                    return false
+                                end
+                                rageOrbit.Target = p
+                                rageOrbit_PinSilent(m)
+                                rageSA_Arm()
+                                orbitLabel:ChangeText("Target: " .. p.Name)
+                                rageOrbit_Apply()
+                                return true
+                            end
+
+                            local function rageOrbit_Unlock()
+                                rageOrbit.Target = nil
+                                rageOrbit.Override = false
+                                rageOrbit_PinSilent(nil)
+                                rageSA_Restore()
+                                rageOrbit_HideVisuals()
+                                orbitLabel:ChangeText("Target: None")
+                                rageOrbit_Apply()
+                            end
+
+                            getgenv().mj_orbit_API = {
+                                lock = function(p)
+                                    rageOrbit.Override = true
+                                    local ok = rageOrbit_LockPlayer(p)
+                                    if not ok then rageOrbit.Override = false rageOrbit_Apply() end
+                                    return ok
+                                end,
+                                unlock = function() rageOrbit_Unlock() end,
+                                state = function() return rageOrbit.Target end,
+                            }
+
                             local orbitT = rage_main:Toggle({ title = "Orbit", default = false, callback = function(b) rageOrbit_Set(b) end })
                             orbitT:Keybind({ keybindlist = true, keybindname = "orbit", key = "H", mode = "Toggle", callback = function(s)
                                 if not orbitT.state then return end
                                 if s then
-                                    local p = rageOrbit_FindNearest()
-                                    rageOrbit.Target = p
-                                    if p then
-                                        local m = p.Character
-                                        local h = m and m:FindFirstChildOfClass("Humanoid") or nil
-                                        if m and h and h.Health > 0 then
-                                            rageOrbit_PinSilent(m)
-                                            rageSA_Arm()
-                                            orbitLabel:ChangeText("Target: " .. p.Name)
-                                        else
-                                            rageOrbit.Target = nil
-                                            rageOrbit_PinSilent(nil)
-                                            orbitLabel:ChangeText("Target: None Found")
-                                        end
-                                    else
-                                        rageOrbit_PinSilent(nil)
-                                        orbitLabel:ChangeText("Target: None Found")
-                                    end
+                                    rageOrbit_LockPlayer(rageOrbit_FindNearest())
                                 else
                                     rageOrbit.Target = nil
                                     rageOrbit_PinSilent(nil)
                                     rageSA_Restore()
+                                    rageOrbit_HideVisuals()
                                     orbitLabel:ChangeText("Target: None")
+                                    rageOrbit_Apply()
                                 end
-                                rageOrbit_Apply()
                             end })
                             rage_main:Dropdown({ title = "Method", values = {"Circular", "Random", "Sniper"}, default = "Circular", multi = false, callback = function(v) rageOrbit.Method = v end })
                             rage_main:Slider({ title = "Radius", min = 4, max = 60, default = 14, float = 1, suffix = " st", callback = function(v) rageOrbit.Radius = v end })
                             rage_main:Slider({ title = "Speed", min = 1, max = 100, default = 40, float = 1, suffix = "", callback = function(v) rageOrbit.Speed = v end })
+                            rage_main:Toggle({ title = "Show Orbit (visual only, NOT safety)", default = false, callback = function(b)
+                                showOrbit.Enabled = b
+                                if not b then rageOrbit_HideVisuals() end
+                            end })
 
                             local rageAF = { Enabled = false, Last = 0, Rate = 0.12 }
 
@@ -7293,44 +7853,89 @@ local nigga = (function()
                                 Enabled = false,
                                 Box = true,
                                 Name = true,
-                                NameMode = "DisplayName",
+                                NameMode = "Username",
                                 Distance = true,
                                 Health = true,
                                 Tracer = false,
                                 MaxDistance = 1500,
                                 Objects = {},
+                                Seen = 0,
+                                Drawn = 0,
+                                LastStatus = 0,
+                                Gui = nil,
                             }
+
+                            local espStatus = visual_main:Label("ESP: OFF")
+                            local espMasterT = nil
+
+                            local function visualESP_UpdateStatus()
+                                if not visualESP.Enabled then
+                                    espStatus:ChangeText("ESP: OFF")
+                                else
+                                    espStatus:ChangeText("Loop: ON - Seen: " .. tostring(visualESP.Seen) .. " - Drawn: " .. tostring(visualESP.Drawn))
+                                end
+                            end
+
+                            local function visualESP_Gui()
+                                if visualESP.Gui and visualESP.Gui.Parent then return visualESP.Gui end
+                                local g = InstanceNew("ScreenGui", coreguiService)
+                                g["Name"] = [[MJ_ESP]]
+                                g["ResetOnSpawn"] = false
+                                g["IgnoreGuiInset"] = true
+                                g["ZIndexBehavior"] = Enum.ZIndexBehavior.Sibling
+                                g["DisplayOrder"] = 5
+                                visualESP.Gui = g
+                                return g
+                            end
 
                             local function visualESP_GetDraws(player)
                                 local d = visualESP.Objects[player]
-                                if d then return d end
-                                d = {
-                                    Box = DrawingNew("Square"),
-                                    Name = DrawingNew("Text"),
-                                    Distance = DrawingNew("Text"),
-                                    Health = DrawingNew("Line"),
-                                    Tracer = DrawingNew("Line"),
-                                }
-                                d.Tracer.Thickness = 1
-                                d.Tracer.Color = Color3FromRGB(255, 45, 45)
-                                d.Tracer.Transparency = 0.85
-                                d.Tracer.Visible = false
-                                d.Box.Thickness = 1
-                                d.Box.Filled = false
-                                d.Box.Color = Color3FromRGB(255, 45, 45)
-                                d.Box.Visible = false
-                                d.Name.Size = 13
-                                d.Name.Center = true
-                                d.Name.Outline = true
-                                d.Name.Color = Color3FromRGB(255, 255, 255)
-                                d.Name.Visible = false
-                                d.Distance.Size = 12
-                                d.Distance.Center = true
-                                d.Distance.Outline = true
-                                d.Distance.Color = Color3FromRGB(200, 200, 200)
-                                d.Distance.Visible = false
-                                d.Health.Thickness = 2
-                                d.Health.Visible = false
+                                if d and d.Folder.Parent then return d end
+                                if d then visualESP.Objects[player] = nil end
+                                local gui = visualESP_Gui()
+                                local folder = InstanceNew("Folder", gui)
+                                folder["Name"] = player.Name .. "_ESP"
+                                local box = InstanceNew("Frame", folder)
+                                box["Name"] = [[Box]]
+                                box["BackgroundTransparency"] = 1
+                                box["BorderSizePixel"] = 0
+                                box["Visible"] = false
+                                local stroke = InstanceNew("UIStroke", box)
+                                stroke["ApplyStrokeMode"] = Enum.ApplyStrokeMode.Border
+                                stroke["Thickness"] = 1
+                                stroke["Color"] = Color3FromRGB(255, 45, 45)
+                                local name = InstanceNew("TextLabel", folder)
+                                name["Name"] = [[NameESP]]
+                                name["Size"] = UDim2New(0, 100, 0, 20)
+                                name["BackgroundTransparency"] = 1
+                                name["Font"] = Enum.Font.GothamBold
+                                name["TextSize"] = 13
+                                name["TextColor3"] = Color3FromRGB(255, 255, 255)
+                                name["TextStrokeTransparency"] = 0.5
+                                name["TextXAlignment"] = Enum.TextXAlignment.Center
+                                name["Visible"] = false
+                                local dist = InstanceNew("TextLabel", folder)
+                                dist["Name"] = [[DistESP]]
+                                dist["Size"] = UDim2New(0, 100, 0, 20)
+                                dist["BackgroundTransparency"] = 1
+                                dist["Font"] = Enum.Font.GothamBold
+                                dist["TextSize"] = 12
+                                dist["TextColor3"] = Color3FromRGB(200, 200, 200)
+                                dist["TextStrokeTransparency"] = 0.5
+                                dist["TextXAlignment"] = Enum.TextXAlignment.Center
+                                dist["Visible"] = false
+                                local hp = InstanceNew("Frame", folder)
+                                hp["Name"] = [[HealthESP]]
+                                hp["BorderSizePixel"] = 0
+                                hp["BackgroundColor3"] = Color3FromRGB(0, 255, 0)
+                                hp["Visible"] = false
+                                local tracer = InstanceNew("Frame", folder)
+                                tracer["Name"] = [[TracerESP]]
+                                tracer["BorderSizePixel"] = 0
+                                tracer["AnchorPoint"] = Vector2New(0.5, 0.5)
+                                tracer["BackgroundColor3"] = Color3FromRGB(255, 45, 45)
+                                tracer["Visible"] = false
+                                d = { Folder = folder, Box = box, Name = name, Distance = dist, Health = hp, Tracer = tracer }
                                 visualESP.Objects[player] = d
                                 return d
                             end
@@ -7339,58 +7944,71 @@ local nigga = (function()
                                 if player then
                                     local d = visualESP.Objects[player]
                                     if d then
-                                        for _, o in pairs(d) do pcall(function() o:Remove() end) end
+                                        pcall(function() d.Folder:Destroy() end)
                                         visualESP.Objects[player] = nil
                                     end
                                 else
                                     for p, _ in pairs(visualESP.Objects) do visualESP_Clear(p) end
+                                    if visualESP.Gui then pcall(function() visualESP.Gui:Destroy() end) visualESP.Gui = nil end
                                 end
                             end
 
                             local function visualESP_Hide(d)
-                                for _, o in pairs(d) do o.Visible = false end
+                                d.Box.Visible = false
+                                d.Name.Visible = false
+                                d.Distance.Visible = false
+                                d.Health.Visible = false
+                                d.Tracer.Visible = false
                             end
 
                             local function visualESP_Render()
                                 local cam = workspace.CurrentCamera
                                 if not cam then return end
-                                local hidden = getgenv().streamProof and true or false
+                                local gui = visualESP_Gui()
                                 for p, _ in pairs(visualESP.Objects) do
                                     if not p.Parent then visualESP_Clear(p) end
                                 end
+                                local seen, drawn = 0, 0
                                 for _, player in ipairs(playerService:GetPlayers()) do
                                     if player ~= LocalPlayer then
                                         local char = player.Character
                                         local hum = char and char:FindFirstChildOfClass("Humanoid")
                                         local root = hum and hum.RootPart
                                         if root and hum.Health > 0 then
+                                            seen = seen + 1
                                             local dist = (cam.CFrame.Position - root.Position).Magnitude
                                             if dist <= visualESP.MaxDistance then
                                                 local top, topOn = cam:WorldToViewportPoint(root.Position + Vector3New(0, 3, 0))
                                                 local bot = cam:WorldToViewportPoint(root.Position - Vector3New(0, 3, 0))
                                                 local d = visualESP.Objects[player] or visualESP_GetDraws(player)
-                                                if topOn and top.Z > 0 and not hidden then
+                                                if topOn and top.Z > 0 then
+                                                    drawn = drawn + 1
                                                     local h = math.abs(top.Y - bot.Y)
                                                     local w = h * 0.6
                                                     local x, y = top.X - w / 2, top.Y
-                                                    d.Box.Size = Vector2New(w, h)
-                                                    d.Box.Position = Vector2New(x, y)
+                                                    d.Box.Position = UDim2New(0, x, 0, y)
+                                                    d.Box.Size = UDim2New(0, w, 0, h)
                                                     d.Box.Visible = visualESP.Box
                                                     d.Name.Text = (visualESP.NameMode == "DisplayName" and player.DisplayName ~= nil and player.DisplayName ~= "") and player.DisplayName or player.Name
-                                                    d.Name.Position = Vector2New(top.X, y - 16)
+                                                    d.Name.Position = UDim2New(0, x + w / 2 - 50, 0, y - 20)
                                                     d.Name.Visible = visualESP.Name
                                                     d.Distance.Text = math.floor(dist) .. "m"
-                                                    d.Distance.Position = Vector2New(top.X, y + h + 2)
+                                                    d.Distance.Position = UDim2New(0, x + w / 2 - 50, 0, y + h + 2)
                                                     d.Distance.Visible = visualESP.Distance
                                                     local hp = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
-                                                    d.Health.From = Vector2New(x - 6, y + h)
-                                                    d.Health.To = Vector2New(x - 6, y + h - h * hp)
-                                                    d.Health.Color = Color3FromRGB(255 * (1 - hp), 255 * hp, 0)
+                                                    local hh = h * hp
+                                                    d.Health.Position = UDim2New(0, x - 6, 0, y + h - hh)
+                                                    d.Health.Size = UDim2New(0, 3, 0, hh)
+                                                    d.Health.BackgroundColor3 = Color3FromRGB(255 * (1 - hp), 255 * hp, 0)
                                                     d.Health.Visible = visualESP.Health
                                                     local vs = cam.ViewportSize
-                                                    d.Tracer.From = Vector2New(vs.X / 2, vs.Y)
-                                                    d.Tracer.To = Vector2New(top.X, y + h)
-                                                    d.Tracer.Color = Color3FromRGB(255 * (1 - hp), 255 * hp, 45)
+                                                    local fx, fy = x + w / 2, y + h
+                                                    local dx, dy = fx - vs.X / 2, fy - vs.Y
+                                                    local len = math.sqrt(dx * dx + dy * dy)
+                                                    d.Tracer.Position = UDim2New(0, vs.X / 2 + dx / 2, 0, vs.Y + dy / 2)
+                                                    d.Tracer.Size = UDim2New(0, len, 0, 1)
+                                                    d.Tracer.Rotation = math.deg(math.atan2(dy, dx))
+                                                    d.Tracer.BackgroundColor3 = Color3FromRGB(255 * (1 - hp), 255 * hp, 45)
                                                     d.Tracer.Visible = visualESP.Tracer
                                                 else
                                                     visualESP_Hide(d)
@@ -7404,20 +8022,30 @@ local nigga = (function()
                                         end
                                     end
                                 end
+                                visualESP.Seen = seen
+                                visualESP.Drawn = drawn
+                                local now = os.clock()
+                                if now - visualESP.LastStatus > 0.25 then
+                                    visualESP.LastStatus = now
+                                    visualESP_UpdateStatus()
+                                end
                             end
 
                             local function visualESP_SetEnabled(on)
-                                visualESP.Enabled = on
+                                Loops:RemoveFromRenderStepped("mj_visual_esp")
+                                visualESP_Clear()
+                                visualESP.Enabled = false
+                                visualESP.Seen = 0
+                                visualESP.Drawn = 0
                                 if on then
+                                    visualESP.Enabled = true
                                     Loops:AddToRenderStepped("mj_visual_esp", visualESP_Render)
-                                else
-                                    Loops:RemoveFromRenderStepped("mj_visual_esp")
-                                    visualESP_Clear()
                                 end
+                                visualESP_UpdateStatus()
                             end
                             getgenv().mj_visualESP_Clear = visualESP_Clear
 
-                            visual_main:Toggle({ title = "Enabled", default = false, callback = function(b) visualESP_SetEnabled(b) end })
+                            espMasterT = visual_main:Toggle({ title = "Enabled", default = false, callback = function(b) visualESP_SetEnabled(b) end })
                             visual_main:Toggle({ title = "Box", default = true, callback = function(b) visualESP.Box = b end })
                             visual_main:Toggle({ title = "Name", default = true, callback = function(b) visualESP.Name = b end })
                             visual_main:Toggle({ title = "Distance", default = true, callback = function(b) visualESP.Distance = b end })
