@@ -6929,6 +6929,40 @@ local nigga = (function()
                                     active = false,
                                     loop = nil
                                 }
+                                local function getAntiStompKeybind()
+                                    local okC, conns = pcall(function() return getconnections(inputService.InputBegan) end)
+                                    if not okC or type(conns) ~= "table" then return nil end
+                                    for _, c in ipairs(conns) do
+                                        local okF, fn = pcall(function() return c.Function end)
+                                        if okF and type(fn) == "function" then
+                                            local isOurs, kbRef = false, nil
+                                            for j = 1, 60 do
+                                                local okU, uv = pcall(function() return debug.getupvalue(fn, j) end)
+                                                if not okU or uv == nil then break end
+                                                if type(uv) == "table" then
+                                                    if rawget(uv, "Title") == "anti stomp" and type(rawget(uv, "Callback")) == "function" then
+                                                        isOurs = true
+                                                    end
+                                                    if type(rawget(uv, "FMode")) == "string" and type(rawget(uv, "Toggled")) == "boolean" then
+                                                        kbRef = uv
+                                                    end
+                                                end
+                                            end
+                                            if isOurs and kbRef then
+                                                return kbRef
+                                            end
+                                        end
+                                    end
+                                    return nil
+                                end
+                                local function setAntiStompKeyToggled(v)
+                                    local kb = getAntiStompKeybind()
+                                    if kb then pcall(function() kb.Toggled = (v == true) end) end
+                                end
+                                getgenv().uishit.ConfigFlags["AntiStompActive"] = function(state)
+                                    antiStomp.active = (state == true)
+                                    setAntiStompKeyToggled(antiStomp.active)
+                                end
 
                                 local STOMP_RANGE = 12
 
@@ -7021,54 +7055,15 @@ local nigga = (function()
                                         anti_stomp_connect()
                                     else
                                         antiStomp.active = false
+                                        setAntiStompKeyToggled(false)
                                         anti_stomp_disconnect()
                                     end
+                                    pcall(function() getgenv().uishit.Flags["AntiStompActive"] = antiStomp.active end)
                                 end })
-                                local function getAntiStompKeybind()
-                                    local okC, conns = pcall(function() return getconnections(inputService.InputBegan) end)
-                                    if not okC or type(conns) ~= "table" then return nil end
-                                    for _, c in ipairs(conns) do
-                                        local okF, fn = pcall(function() return c.Function end)
-                                        if okF and type(fn) == "function" then
-                                            local isOurs, kbRef = false, nil
-                                            for j = 1, 60 do
-                                                local okU, uv = pcall(function() return debug.getupvalue(fn, j) end)
-                                                if not okU or uv == nil then break end
-                                                if type(uv) == "table" then
-                                                    if rawget(uv, "Title") == "anti stomp" and type(rawget(uv, "Callback")) == "function" then
-                                                        isOurs = true
-                                                    end
-                                                    if type(rawget(uv, "FMode")) == "string" and type(rawget(uv, "Toggled")) == "boolean" then
-                                                        kbRef = uv
-                                                    end
-                                                end
-                                            end
-                                            if isOurs and kbRef then
-                                                return kbRef
-                                            end
-                                        end
-                                    end
-                                    return nil
-                                end
-                                local antiStompLastBoundKey = nil
-                                do
-                                    local kb0 = getAntiStompKeybind()
-                                    if kb0 then antiStompLastBoundKey = rawget(kb0, "FKey") end
-                                end
-                                anti_stomp_toggle:Keybind({ title = "anti stomp", keybindlist = true, keybindname = "anti stomp", mode = "Toggle", callback = function (key)
+                                anti_stomp_toggle:Keybind({ title = "anti stomp", keybindlist = true, keybindname = "anti stomp", mode = "Toggle", callback = function (s)
                                     if not antiStomp.enabled then return end
-                                    local kbNow = getAntiStompKeybind()
-                                    local curKey = kbNow and rawget(kbNow, "FKey") or nil
-                                    if curKey ~= antiStompLastBoundKey then
-                                        antiStompLastBoundKey = curKey
-                                        return
-                                    end
-                                    local mode = kbNow and rawget(kbNow, "FMode") or nil
-                                    if mode == "Toggle" then
-                                        antiStomp.active = not antiStomp.active
-                                    elseif key then
-                                        antiStomp.active = not antiStomp.active
-                                    end
+                                    antiStomp.active = (s == true)
+                                    pcall(function() getgenv().uishit.Flags["AntiStompActive"] = antiStomp.active end)
                                 end })
                             end
                             
